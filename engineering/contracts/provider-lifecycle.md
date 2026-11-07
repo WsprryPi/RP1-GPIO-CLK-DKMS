@@ -74,6 +74,14 @@ disagreement. Build metadata has no SemVer precedence. Downgrades require
 explicit owning removal and reinstall. None of these classifications permits
 overwriting unexplained changed installed files or adopting foreign state.
 
+Forward release replacement retains the predecessor ownership receipt and
+verifies its installed payload through native removal preflight. It does not
+download or require the outgoing Debian package: ordinary editable releases
+can replace that URL, and forward update does not consume that package or
+automatically reinstall the predecessor. Previously cached packages remain
+untouched. An explicit downgrade/reinstall separately requires a verified
+package; development removal still retains its required owning rollback tools.
+
 There is no automatic retry of a failed effect. Preserve the staged plan,
 receipt, and recovery inputs. A fresh installation request observes the actual
 interrupted state and uses the existing attributable recovery workflow.

@@ -333,7 +333,10 @@ The [package transition contract](../operations/package-lifecycle.md) requires
 read-only preflight before the package manager, exact inactive ownership, complete
 payload identity and native DKMS/cache agreement. Exact package repeats converge
 without forced module removal. Compatible passive packages support upgrades;
-unknown repository or lifecycle state is refused without adoption.
+unknown repository or lifecycle state is refused without adoption. Forward
+release updates retain the predecessor receipt but do not require downloading
+the outgoing package from a possibly replaced release URL; native removal
+verifies the installed payload. No automatic package downgrade is performed.
 Downgrade recovery removes the successor before exact retained predecessor
 reinstall. [Version identity](versioning.md) defines source-derived identities,
 SemVer precedence, Debian ordering, payload conflicts, and upgrade eligibility. No package transition restores runtime sessions,

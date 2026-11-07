@@ -2352,35 +2352,12 @@ def retain_provider_migration(record_path: pathlib.Path, record: Mapping[str, An
         value["schema"] = RECORD_SCHEMA
     require(retained_base == current_base,
             "retained predecessor ownership differs")
-    if record["channel"] == "release":
-        manifest = record["manifest"]
-        package = manifest["package"]
-        destination = directory / package["filename"]
-        if not destination.exists() and not destination.is_symlink():
-            url = (f"https://github.com/{REPOSITORY}/releases/download/"
-                   f"{manifest['releaseTag']}/{package['filename']}")
-            payload = GitHubClient().bytes(url, limit=MAX_PACKAGE_BYTES, allow_asset_redirect=True)
-            require(sha256_bytes(payload) == package["sha256"],
-                    "predecessor rollback package SHA-256 differs")
-            descriptor, temporary = tempfile.mkstemp(prefix=".rollback-", dir=directory)
-            try:
-                with os.fdopen(descriptor, "wb") as stream:
-                    stream.write(payload)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.link(temporary, destination, follow_symlinks=False)
-                parent = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-                try:
-                    os.fsync(parent)
-                finally:
-                    os.close(parent)
-            finally:
-                os.unlink(temporary)
-        require(not destination.is_symlink() and destination.is_file() and
-                sha256_file(destination) == package["sha256"],
-                "retained predecessor rollback package differs")
-        validate_package(destination, manifest, runner)
-    else:
+    # Release removal verifies the installed payload against this receipt and
+    # uses native APT/dpkg/DKMS cleanup. It does not consume the outgoing .deb
+    # or automatically reinstall it. Editable releases may replace that URL;
+    # do not make an unused rollback download a prerequisite for updating.
+    # Previously retained packages are left untouched as optional recovery data.
+    if record["channel"] == "development":
         rollback_copy = directory / "previous-development-rollback.json"
         entrypoint_copy = directory / "previous-development-rollback"
         if not rollback_copy.exists() or not entrypoint_copy.exists():

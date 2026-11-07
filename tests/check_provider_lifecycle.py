@@ -2594,12 +2594,12 @@ class InstallerMigrationTests(RunnerFixtures, unittest.TestCase):
             with self.assertRaisesRegex(MOD.ContractError, 'source version differs'):
                 MOD.validate_candidate_before_update(self.selected, self.runner())
 
-    def test_rollback_is_retained_and_verified_before_removal(self):
+    def test_predecessor_receipt_is_retained_before_removal_without_download(self):
         write_record(self.record, self.old); args = self.plan(); events = []
         def remove(arguments, runner):
             directories = list(self.root.glob('rp1-provider-migration.*'))
             self.assertEqual(len(directories), 1)
-            self.assertEqual((directories[0] / self.old['manifest']['package']['filename']).read_bytes(), self.payload)
+            self.assertFalse((directories[0] / self.old['manifest']['package']['filename']).exists())
             self.assertEqual(json.loads((directories[0] / 'previous-installation.json').read_text()), self.old)
             self.assertEqual(arguments.remove, 'true')
             events.append('remove'); self.record.unlink()
@@ -2612,16 +2612,19 @@ class InstallerMigrationTests(RunnerFixtures, unittest.TestCase):
             MOD.apply(args, self.runner())
         self.assertEqual(events, ['candidate', 'remove', 'absence', 'install'])
 
-    def test_corrupt_rollback_package_preserves_installed_provider(self):
+    def test_replaced_release_url_does_not_block_update(self):
         write_record(self.record, self.old); args = self.plan()
+        def remove(*_): self.record.unlink()
         with mock.patch.object(MOD, 'validate_candidate_before_update'), \
-             mock.patch.object(MOD.GitHubClient, 'bytes', return_value=b'corrupt'), \
-             mock.patch.object(MOD, 'remove_owned_provider') as remove, \
+             mock.patch.object(MOD.GitHubClient, 'bytes', side_effect=AssertionError('outgoing package must not be downloaded')) as download, \
+             mock.patch.object(MOD, 'remove_owned_provider', side_effect=remove), \
+             mock.patch.object(MOD, 'verify_provider_absent'), \
              mock.patch.object(MOD, 'apply_development') as install:
-            with self.assertRaisesRegex(MOD.ContractError, 'rollback package SHA-256'):
-                MOD.apply(args, self.runner())
-        self.assertEqual(json.loads(self.record.read_text()), self.old)
-        remove.assert_not_called(); install.assert_not_called()
+            MOD.apply(args, self.runner())
+        download.assert_not_called(); install.assert_called_once()
+        retained = list(self.root.glob('rp1-provider-migration.*/previous-installation.json'))
+        self.assertEqual(len(retained), 1)
+        self.assertEqual(json.loads(retained[0].read_text()), self.old)
 
     def test_failed_owned_removal_never_installs_candidate(self):
         write_record(self.record, self.old); args = self.plan()
@@ -2636,26 +2639,18 @@ class InstallerMigrationTests(RunnerFixtures, unittest.TestCase):
         self.assertTrue(self.record.exists())
         self.assertTrue(list(self.root.glob('rp1-provider-migration.*/previous-installation.json')))
 
-    def test_retained_package_is_reused_offline_and_corruption_is_refused(self):
-        with mock.patch.object(MOD.GitHubClient, 'bytes', return_value=self.payload) as download, \
-             mock.patch.object(MOD, 'validate_package'):
+    def test_optional_old_package_is_not_consumed_or_modified(self):
+        with mock.patch.object(MOD.GitHubClient, 'bytes', side_effect=AssertionError('no outgoing download')), \
+             mock.patch.object(MOD, 'validate_package', side_effect=AssertionError('no outgoing package validation')):
             directory = MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
+            package = directory / self.old['manifest']['package']['filename']
+            package.write_bytes(b'old optional recovery input')
             MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
-            self.assertEqual(download.call_count, 1)
-            (directory / self.old['manifest']['package']['filename']).write_bytes(b'bad cached input')
-            with self.assertRaisesRegex(MOD.ContractError, 'retained predecessor rollback package differs'):
-                MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
-            self.assertEqual(download.call_count, 1)
-
-    def test_retained_package_symlink_is_preserved_and_refused(self):
-        with mock.patch.object(MOD.GitHubClient, 'bytes', return_value=self.payload), \
-             mock.patch.object(MOD, 'validate_package'):
-            directory = MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
-            package = directory / self.old['manifest']['package']['filename']; package.unlink()
-            target = self.root / 'foreign'; target.write_bytes(self.payload); package.symlink_to(target)
-            with self.assertRaisesRegex(MOD.ContractError, 'rollback package differs'):
-                MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
-            self.assertTrue(package.is_symlink()); self.assertEqual(target.read_bytes(), self.payload)
+            self.assertEqual(package.read_bytes(), b'old optional recovery input')
+            package.unlink()
+            target = self.root / 'foreign'; target.write_bytes(b'foreign data'); package.symlink_to(target)
+            MOD.retain_provider_migration(self.record, self.old, self.selected, self.runner())
+            self.assertTrue(package.is_symlink()); self.assertEqual(target.read_bytes(), b'foreign data')
 
     def test_same_provider_does_not_create_migration_or_remove_it(self):
         self.assertFalse(MOD.provider_migration_required(self.old, {
@@ -2718,7 +2713,7 @@ class InstallerMigrationTests(RunnerFixtures, unittest.TestCase):
              mock.patch.object(MOD, 'verify_provider_absent', side_effect=lambda *_:events.append('absence')), \
              mock.patch.object(MOD, 'apply_release', side_effect=lambda *_:events.append('install')):
             MOD.apply(args, self.runner())
-        self.assertEqual(events, ['candidate','rollback','remove','absence','install'])
+        self.assertEqual(events, ['candidate','remove','absence','install'])
 
     def development_recovery_inputs(self):
         previous=development_record()

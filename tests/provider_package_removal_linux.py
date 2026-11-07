@@ -57,7 +57,41 @@ def main():
         provider.ACTIVE_CREATED_DIRECTORIES = [str(path) for path in directories]
         args = argparse.Namespace(remove='true', record=record, root=Path('/'))
         with mock.patch.object(provider.platform, 'release', return_value=lifecycle.KERNELS[0]):
-            provider.apply_release(state, resolved, record, Path('/'), runner)
+            # Install genuine earlier RC1, discard its package, and exercise
+            # the production replacement coordinator without a rollback cache
+            # or network. An editable URL need not retain the old bytes.
+            previous_commit = '3cfcf234cb068753a98a04ae6a4b991d20620814'
+            previous_state = state/'previous'; previous_state.mkdir(mode=0o700)
+            previous_source = previous_state/'source'
+            subprocess.run(['git', 'clone', '--no-local', '/source', str(previous_source)], check=True)
+            subprocess.run(['git', '-C', str(previous_source), 'remote', 'set-url', 'origin',
+                            provider.REPOSITORY_URL], check=True)
+            subprocess.run(['git', '-C', str(previous_source), 'checkout', '--detach', previous_commit], check=True)
+            previous_assets = previous_state/'assets'
+            subprocess.run([str(previous_source/'scripts/build-release-candidate'),
+                            '--version', manifest['productVersion'], '--source-commit', previous_commit,
+                            '--output', str(previous_assets), '--release'], check=True)
+            previous_manifest = json.loads((previous_assets/provider.MANIFEST_NAME).read_text())
+            assert previous_manifest['releaseTag'] == manifest['releaseTag']
+            assert previous_commit != manifest['sourceCommit']
+            previous_package = previous_assets/previous_manifest['package']['filename']
+            previous_resolved = {'channel':'release', 'tag':previous_manifest['releaseTag'],
+                                 'commit':previous_commit, 'manifest':previous_manifest,
+                                 'packagePath':str(previous_package),
+                                 'checkout':provider.validate_checkout(str(previous_source), runner)}
+            provider.apply_release(previous_state, previous_resolved, record, Path('/'), runner)
+            previous_receipt = record.read_bytes()
+            previous_package.unlink()
+            assert not list(record.parent.glob('rp1-provider-migration.*'))
+            provider.atomic_json(state/'plan.json', {
+                'schema':provider.STATE_SCHEMA, 'providerRepository':provider.REPOSITORY,
+                'dryRun':False, 'decision':{'install':True}, 'resolved':resolved,
+                'createdDirectories':[str(path) for path in directories]})
+            provider.apply(argparse.Namespace(state_dir=state, record=record, root=Path('/')), runner)
+            assert json.loads(record.read_bytes())['sourceCommit'] == manifest['sourceCommit']
+            retained = list(record.parent.glob('rp1-provider-migration.*/previous-installation.json'))
+            assert len(retained) == 1 and retained[0].read_bytes() == previous_receipt
+            assert not (retained[0].parent/previous_package.name).exists()
             original = record.read_bytes()
             modules = provider.module_artifacts(Path('/'))
             for path in directories:
@@ -83,6 +117,7 @@ def main():
             assert not record.exists() and not provider.removal_pending_path(record).exists()
             assert all(not path.exists() for path in directories)
     result = {'status':'PASS', 'sourceCommit':manifest['sourceCommit'],
+              'sameTagReplacementWithoutOldPackage':True, 'predecessorSourceCommit':previous_commit,
               'realPreflight':True, 'nativePackageRemoval':True,
               'nonemptyDirectoryPreserved':True, 'ownershipRecoveredOnRefusal':True,
               'hardwareQualification':False, 'rfQualification':False}
