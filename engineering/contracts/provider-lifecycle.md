@@ -61,9 +61,7 @@ or remove another client's instance. The default receipt is
 Each successful effect returns the newly acknowledged plan digest. Plans bind
 the frozen candidate and predecessor receipt digest; effects reject stale
 receipts and revalidate exact source/package/runtime inputs. The global
-`/run/lock/rp1-gpclk-provider-lifecycle.lock` serializes provider effects. This
-empty coordination file is retained until reboot so another waiter cannot
-acquire a replacement lock inode. Native DKMS/package/runtime locks and guarded
+existing `/run/lock` directory inode serializes provider effects without creating a dedicated lock file. If an older coordination file already exists, the provider also locks it and retains it until reboot so existing waiters cannot acquire a replacement inode. Native DKMS/package/runtime locks and guarded
 recovery remain authoritative for their respective effects.
 
 Identical source/artifact inputs retain attributable installed modules and the
@@ -100,13 +98,13 @@ The provider retains a content-addressed complete facade closure under
 `/var/lib/rp1-gpclk-dkms/facade`, independent of runtime inverse deployment.
 `active.json` identifies its exact entry point and file hashes. Clients verify
 the root-owned, non-writable, no-symlink closure before execution. Owning removal
-retires only verified facade copies after native absence is established. The
+retires verified facade copies after native absence is established. The
 receipt also records dedicated configuration/drop-in directories absent before
 installation; removal retires those only when still owned and empty. Existing
 or nonempty directories are preserved.
-Completed development evidence and immutable predecessor recovery inputs remain
-attributable recovery material rather than installed provider payload. They may
-be retired separately only after terminal rollback and absence of live references.
+Terminal removal validates and retires attributable runtime journals and predecessor recovery inputs after native absence. Unknown files, substituted paths, active locks and foreign ownership stop retirement and preserve recovery evidence. A root-owned retirement receipt outside the provider directory and a file inventory permit retry after partial deletion; remaining files must match that inventory and new or changed files stop the retry. Installation refuses an unresolved retirement. Internal predecessor removal during upgrade does not retire this state. The public status includes the boolean `retirementPending` so clients can discover that retry without interpreting private journals.
+
+A separate ownership receipt records whether this installation created `rp1-gpclk-route`. Terminal removal deletes that group only when its GID is unchanged, it has no account members or primary users, and no remaining files on the root filesystem use it. Pre-existing or shared groups remain with a diagnostic. The empty runtime directory is retired only after native absence.
 
 Production source selection requires actual eligible published artifacts.
 Development selection can use exact authoritative commits or explicitly selected

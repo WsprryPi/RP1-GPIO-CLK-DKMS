@@ -2895,5 +2895,119 @@ class InstallerMigrationTests(RunnerFixtures, unittest.TestCase):
         owned_remove.assert_called_once(); install.assert_called_once()
 
 
+
+class TerminalRetirementTests(unittest.TestCase):
+    def setUp(self):
+        self.root=temporary_root(self,'rp1-terminal-').resolve()
+        self.record=MOD.root_path(self.root,str(MOD.DEFAULT_RECORD))
+        self.record.parent.mkdir(parents=True,mode=0o700)
+        self.proof=MOD.retirement_proof(self.record,self.root)
+        value=release_record();value['client']='WsprryPi/WsprryPi'
+        write_record(self.proof,value)
+        self.addCleanup(mock.patch.stopall)
+        mock.patch.object(MOD,'ACTIVE_CLIENT','WsprryPi/WsprryPi').start()
+        mock.patch.object(MOD,'FACADE_ROOT',self.record.parent/'facade').start()
+        mock.patch.object(MOD,'verify_provider_absent').start()
+        self.runner=mock.Mock();self.runner.run.return_value=MOD.CommandResult('','',0)
+
+    def retire(self):MOD.retire_terminal_state(self.record,self.root,self.runner)
+
+    def test_complete_owned_evidence_is_removed_and_retry_after_tree_removal_works(self):
+        runtime=self.record.parent/'runtime-admin';runtime.mkdir(mode=0o700)
+        write_record(runtime/'last-deployment.json',{'completed':True})
+        self.retire();self.assertFalse(self.record.parent.exists());self.assertFalse(self.proof.exists())
+        write_record(self.proof,{**release_record(),'client':'WsprryPi/WsprryPi'})
+        self.retire();self.assertFalse(self.proof.exists())
+
+    def test_partial_tree_deletion_retries_and_refuses_new_files(self):
+        runtime=self.record.parent/'runtime-admin';runtime.mkdir(mode=0o700)
+        item=runtime/'last-deployment.json';write_record(item,{'completed':True})
+        def interrupted(path):
+            item.unlink()
+            raise OSError('injected interruption after one deletion')
+        with mock.patch.object(MOD.shutil,'rmtree',side_effect=interrupted):
+            with self.assertRaises(OSError):self.retire()
+        self.assertTrue(self.proof.exists())
+        foreign=runtime/'operator.json';write_record(foreign,{'keep':True})
+        with self.assertRaisesRegex(MOD.ContractError,'new or modified'):self.retire()
+        self.assertTrue(foreign.exists())
+        foreign.unlink();self.retire()
+        self.assertFalse(self.record.parent.exists());self.assertFalse(self.proof.exists())
+        self.assertFalse(self.proof.with_name('.rp1-gpclk-retirement-files.json').exists())
+
+    def test_dangling_retirement_proof_is_visible_and_refused(self):
+        self.proof.unlink();self.proof.symlink_to(self.root/'missing')
+        self.assertTrue(MOD.public_status(self.record)['retirementPending'])
+        with self.assertRaises(MOD.ContractError):self.retire()
+        self.assertTrue(self.proof.is_symlink())
+
+    def test_foreign_runtime_file_and_symlink_preserve_all_evidence(self):
+        for mode in ['foreign','symlink']:
+            with self.subTest(mode=mode):
+                runtime=self.record.parent/'runtime-admin';runtime.mkdir(mode=0o700)
+                if mode=='foreign':write_record(runtime/'operator.json',{'keep':True})
+                else:(runtime/'lock').symlink_to(self.proof)
+                with self.assertRaises(MOD.ContractError):self.retire()
+                self.assertTrue(self.proof.exists());self.assertTrue(runtime.exists())
+                import shutil
+                shutil.rmtree(runtime)
+
+    def test_active_runtime_lock_preserves_evidence(self):
+        import fcntl
+        runtime=self.record.parent/'runtime-admin';runtime.mkdir(mode=0o700)
+        lock=runtime/'lock';lock.write_text('');lock.chmod(0o600)
+        with lock.open('rb') as stream:
+            fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+            with self.assertRaisesRegex(MOD.ContractError,'lock is active'):self.retire()
+        self.assertTrue(self.proof.exists());self.assertTrue(lock.exists())
+
+    def test_foreign_client_and_nonempty_runtime_directory_are_not_deleted(self):
+        value={**release_record(),'client':'different/client'};write_record(self.proof,value)
+        with self.assertRaises(MOD.ContractError):self.retire()
+        self.assertTrue(self.proof.exists())
+        write_record(self.proof,{**release_record(),'client':'WsprryPi/WsprryPi'})
+        run=MOD.root_path(self.root,'/run/rp1-gpclk-dkms');run.mkdir(parents=True)
+        (run/'operator').write_text('keep')
+        with self.assertRaises(MOD.ContractError):self.retire()
+        self.assertTrue(self.proof.exists());self.assertTrue(self.record.parent.exists())
+
+    def test_created_empty_group_is_removed_but_existing_or_used_groups_are_kept(self):
+        for created,members,expect_delete in [(True,[],True),(False,[],False),(True,['operator'],False)]:
+            with self.subTest(created=created,members=members):
+                self.record.parent.mkdir(parents=True,exist_ok=True,mode=0o700)
+                write_record(self.proof,{**release_record(),'client':'WsprryPi/WsprryPi'})
+                write_record(self.record.parent/'route-group-ownership.json',{'client':'WsprryPi/WsprryPi','created':created,'gid':123})
+                group=mock.Mock(gr_gid=123,gr_mem=members)
+                self.runner.reset_mock()
+                with mock.patch.object(MOD.grp,'getgrnam',return_value=group),mock.patch.object(MOD.pwd,'getpwall',return_value=[]):self.retire()
+                calls=[c.args[0] for c in self.runner.run.call_args_list]
+                self.assertEqual(['groupdel','rp1-gpclk-route'] in calls,expect_delete)
+
+    def test_unknown_development_file_is_preserved_after_valid_source_inventory(self):
+        import development_workflow as workflow
+        evidence=self.record.parent/('rp1-gpclk-dkms-development-evidence.'+'1'*24)
+        source=evidence/'rendered-source';source.mkdir(parents=True,mode=0o700)
+        (source/'owned').write_text('source');(source/'owned').chmod(0o600)
+        manifest={'schema':workflow.SCHEMA,'classification':'source-development','qualification':False,
+                  'moduleName':workflow.CANONICAL_MODULE,'dkmsName':workflow.PACKAGE,
+                  'renderedVersion':'1.0.0','renderedInventory':workflow.inventory(source,['owned'])}
+        write_record(source/'DEVELOPMENT_MANIFEST.json',manifest)
+        write_record(self.proof,{**development_record(),'client':'WsprryPi/WsprryPi','upstreamEvidence':str(evidence)})
+        foreign=evidence/'operator.txt';foreign.write_text('keep');foreign.chmod(0o600)
+        with self.assertRaisesRegex(MOD.ContractError,'unknown development recovery'):self.retire()
+        self.assertEqual(foreign.read_text(),'keep');self.assertTrue(self.proof.exists())
+        foreign.unlink();self.retire();self.assertFalse(evidence.exists())
+
+    def test_stable_directory_mutex_serializes_processes_without_lock_artifact(self):
+        import select
+        code="import sys;sys.path.insert(0,sys.argv[1]);import provider_lifecycle as p;from pathlib import Path;\nwith p.lifecycle_lock(Path(sys.argv[2])):print('LOCKED',flush=True)"
+        with MOD.lifecycle_lock(self.root):
+            child=subprocess.Popen([sys.executable,'-B','-c',code,str(ROOT/'scripts'),str(self.root)],stdout=subprocess.PIPE,text=True)
+            self.addCleanup(lambda: child.kill() if child.poll() is None else None)
+            self.assertFalse(select.select([child.stdout],[],[],0.15)[0])
+        self.assertEqual(child.communicate(timeout=5)[0].strip(),'LOCKED')
+        self.assertFalse((self.root/'rp1-gpclk-provider-lifecycle.lock').exists())
+
+
 if __name__ == "__main__":
     __import__("nonempty_unittest").main()

@@ -564,3 +564,7 @@ generations, journals and interrupted removal; applications retain version
 selection, installation provenance, configuration and service orchestration.
 The update contract also exposes a provider-validated installation receipt.
 The source-development manager remains passive-query-only.
+
+### Terminal provider retirement
+
+The public lifecycle owns final retirement of attributable provider journals, facade closures, predecessor recovery inputs, the empty runtime directory and an unused provider-created route group after native package/module absence. It preserves unknown or substituted data and retains a protected retry receipt until retirement completes. Predecessor removal inside an upgrade retains recovery state. Provider effects serialize on the existing `/run/lock` directory inode; legacy lock files are also locked and retained until reboot when present.

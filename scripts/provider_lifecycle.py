@@ -18,12 +18,14 @@ import base64
 import bz2
 import copy
 import gzip
+import grp
 import hashlib
 import json
 import lzma
 import os
 import pathlib
 import platform
+import pwd
 import re
 import secrets
 import shlex
@@ -2868,6 +2870,10 @@ def apply(args: argparse.Namespace, runner: Runner) -> None:
     require(record.is_absolute(), "installation record path must be absolute")
     secure_record_parent(record)
     root = args.root.resolve(strict=True)
+    proof=retirement_proof(record,root)
+    require(record != root_path(root,str(DEFAULT_RECORD)) or not (proof.exists() or proof.is_symlink()),
+            'pending provider retirement must complete before installation')
+    remember_route_group(record, root)
     recover_pending_removal(record)
     previous, previous_identity, _ = load_ownership_record(record)
     classify_transition(previous, resolved)
@@ -2891,6 +2897,7 @@ def apply(args: argparse.Namespace, runner: Runner) -> None:
         apply_development(resolved, record, runner)
     else:
         raise ContractError("prepared source channel is invalid")
+    remember_route_group(record, root, complete=True)
     print("RP1-GPIO-CLK-DKMS package/source and DKMS installation verified; no route or transmission was activated.")
 
 
@@ -2984,10 +2991,12 @@ def public_status(record):
     value, unused, reason = load_ownership_record(record)
     require(value is not None or not record.exists(), reason or 'unproven provider receipt')
     return {'receipt':value,'recordSha256':record_digest(record),
+            'retirementPending':(retirement_proof(record,pathlib.Path('/')).exists()
+                                 or retirement_proof(record,pathlib.Path('/')).is_symlink()),
             'providerIdentity':describe()}
 
 
-def retire_facades():
+def retire_facades(validate_only=False):
     if not FACADE_ROOT.exists(): return
     # Every retained folder is content-addressed and must contain exactly its known closure.
     for folder in FACADE_ROOT.iterdir():
@@ -2999,24 +3008,168 @@ def retire_facades():
         require(not any(p.is_symlink() for p in folder.rglob('*')), 'foreign retained facade symlink')
         require(sha256_bytes(canonical({name:sha256_file(folder/name) for name in names}))==folder.name,
                 'modified retained provider facade')
+    if validate_only:return
     for folder in list(FACADE_ROOT.iterdir()):
         if folder.name=='active.json': folder.unlink()
         else: shutil.rmtree(folder)
     FACADE_ROOT.rmdir()
 
 
+def remember_route_group(record, root, complete=False):
+    if record != root_path(root, str(DEFAULT_RECORD)):
+        return
+    path=record.parent/'route-group-ownership.json'
+    if path.exists() or path.is_symlink():
+        record_file_identity(path)
+        value=strict_json(path.read_bytes())
+        require(isinstance(value,dict) and set(value)=={'client','created','gid'}
+                and value['client']==ACTIVE_CLIENT and type(value['created']) is bool
+                and (value['gid'] is None or type(value['gid']) is int), 'invalid route group ownership')
+    else:
+        try: group=grp.getgrnam('rp1-gpclk-route')
+        except KeyError: group=None
+        value={'client':ACTIVE_CLIENT,'created':group is None,'gid':group.gr_gid if group else None}
+        atomic_json_new(path,value)
+    if complete and value['created'] and value['gid'] is None:
+        value['gid']=grp.getgrnam('rp1-gpclk-route').gr_gid
+        atomic_json(path,value)
+
+
+def retirement_proof(record,root):
+    return record.parent.parent/'.rp1-gpclk-retired-installation.json'
+
+
+def retire_terminal_state(record, root, runner):
+    """Retire only this client's completed provider evidence after native absence."""
+    if record != root_path(root, str(DEFAULT_RECORD)):
+        return
+    base=record.parent
+    proof=retirement_proof(record,root)
+    former,_,reason=load_ownership_record(proof)
+    require(former is not None and former.get('client')==ACTIVE_CLIENT,
+            'terminal provider retirement has no attributable owner: '+str(reason))
+    verify_provider_absent(root,runner)
+    inventory_path=proof.with_name('.rp1-gpclk-retirement-files.json')
+    saved=None
+    if inventory_path.exists() or inventory_path.is_symlink():
+        record_file_identity(inventory_path)
+        saved=strict_json(inventory_path.read_bytes())
+        require(isinstance(saved,dict) and set(saved)=={'client','proofSha256','files','groupOwnership'}
+                and saved['client']==ACTIVE_CLIENT and saved['proofSha256']==sha256_file(proof)
+                and isinstance(saved['files'],dict),'invalid terminal retirement inventory')
+    if saved is None:
+        known_runtime={'lock','application-lock','transaction.json','manager.json','application.json',
+                       'activation.json','deployment-pending.json','last-deployment.json'}
+        records=[former]
+        for child in base.iterdir() if base.exists() else ():
+            require(not child.is_symlink(),'substituted provider evidence retained: '+str(child))
+            require(child.name in {'route-group-ownership.json','runtime-admin','facade'}
+                    or re.fullmatch(r'rp1-provider-migration\.[0-9a-f]{24}',child.name)
+                    or re.fullmatch(r'rp1-gpclk-dkms-development-evidence\.[0-9a-f]{24}',child.name),
+                    'unrecognized provider data retained: '+str(child))
+            if child.name=='runtime-admin':
+                for item in child.iterdir():
+                    require(item.name in known_runtime or re.fullmatch(r'prior-(boot|activation)-[0-9a-f]{64}\.json',item.name),
+                            'unrecognized runtime data retained: '+str(item))
+            if child.name.startswith('rp1-provider-migration.'):
+                previous,_,why=load_ownership_record(child/'previous-installation.json')
+                require(previous is not None and previous.get('client')==ACTIVE_CLIENT,
+                        'foreign migration evidence retained: '+str(why))
+                records.append(previous)
+                names={'identity.json','previous-installation.json','previous-development-rollback.json','previous-development-rollback'}
+                if previous['channel']=='release':names.add(previous['manifest']['package']['filename'])
+                require(all(p.name in names and p.is_file() and not p.is_symlink() for p in child.iterdir()),
+                        'unknown migration files retained')
+        for child in base.iterdir() if base.exists() else ():
+            if child.name.startswith('rp1-gpclk-dkms-development-evidence.'):
+                require(any(r.get('channel')=='development' and r.get('upstreamEvidence')==str(child) for r in records),
+                        'unattributed development recovery tree retained')
+                from development_workflow import owned_source, Failure
+                try:
+                    version=next(r['productVersion'] for r in records if r.get('upstreamEvidence')==str(child))
+                    owned_source(child/'rendered-source',version)
+                except (Failure, OSError, ValueError) as error:
+                    raise ContractError('modified development recovery tree retained: '+str(error)) from error
+                known={'rendered-source','ROLLBACK.json','RESULT.json','dkms-add.log','dkms-build.log',
+                       'dkms-install.log','depmod.log'}
+                require(all(p.name in known and (p.name=='rendered-source' or p.is_file()) for p in child.iterdir()),
+                        'unknown development recovery files retained')
+    # Validate the entire deletion set before retiring any evidence. An unknown
+    # file, symlink, mount, or active runtime lock cannot be hidden by rmtree.
+    for path in ([base,*base.rglob('*')] if base.exists() else []):
+        info=path.lstat()
+        require(not path.is_symlink() and info.st_uid==os.geteuid() and not info.st_mode&0o022
+                and (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode))
+                and not path.is_mount(), 'unattributable provider evidence retained: '+str(path))
+    files={str(p.relative_to(base)): {'mode':stat.S_IMODE(p.lstat().st_mode),
+           'sha256':sha256_file(p) if p.is_file() else None}
+           for p in base.rglob('*')} if base.exists() else {}
+    if saved is not None:
+        require(all(name in saved['files'] and item==saved['files'][name] for name,item in files.items()),
+                'new or modified data in interrupted terminal retirement retained')
+    group_path=base/'route-group-ownership.json';group=None;value=None
+    if group_path.exists():
+        record_file_identity(group_path);value=strict_json(group_path.read_bytes())
+    elif saved is not None:value=saved['groupOwnership']
+    if value is not None:
+        require(set(value)=={'client','created','gid'} and value['client']==ACTIVE_CLIENT
+                and type(value['created']) is bool and (value['gid'] is None or type(value['gid']) is int),
+                'invalid route group ownership')
+        try: observed=grp.getgrnam('rp1-gpclk-route')
+        except KeyError: observed=None
+        if observed and value['created'] and value['gid']==observed.gr_gid:
+            if not observed.gr_mem and not any(p.pw_gid==observed.gr_gid for p in pwd.getpwall()):group=observed
+            else: print('Retained shared RP1 route group with account membership.')
+        elif observed: print('Retained pre-existing or changed RP1 route group.')
+    with contextlib.ExitStack() as locks:
+        for name in ('lock','application-lock'):
+            path=base/'runtime-admin'/name
+            if path.exists():
+                stream=locks.enter_context(path.open('rb'))
+                try:fcntl.flock(stream,fcntl.LOCK_EX|fcntl.LOCK_NB)
+                except BlockingIOError as error:raise ContractError('runtime retirement lock is active') from error
+        if saved is None:
+            retire_facades(validate_only=True)
+            atomic_json_new(inventory_path,{'client':ACTIVE_CLIENT,'proofSha256':sha256_file(proof),
+                            'files':files,'groupOwnership':value})
+        runtime=root_path(root,'/run/rp1-gpclk-dkms')
+        if runtime.exists():
+            require(not runtime.is_symlink() and runtime.stat().st_uid==os.geteuid()
+                    and not any(runtime.iterdir()),'nonempty or substituted runtime directory retained')
+            runtime.rmdir()
+        if group:
+            owned=runner.run(['find',str(root),'-xdev','-gid',str(group.gr_gid),'-print']).stdout.strip()
+            if owned: print('Retained shared RP1 route group owning files: '+owned)
+            else:runner.run(['groupdel','rp1-gpclk-route'])
+        if base.exists():shutil.rmtree(base)
+    inventory_path.unlink()
+    proof.unlink()
+
+
 @contextlib.contextmanager
-def lifecycle_lock():
-    path=pathlib.Path('/run/lock/rp1-gpclk-provider-lifecycle.lock')
-    fd=os.open(path,os.O_RDWR|os.O_CREAT|os.O_NOFOLLOW|os.O_NONBLOCK,0o600)
+def lifecycle_lock(path=pathlib.Path('/run/lock')):
+    # Lock the stable, existing OS directory rather than an unlinkable product
+    # file. This leaves no new lock artifact and cannot split on removal.
+    fd=os.open(path,os.O_RDONLY|os.O_DIRECTORY|os.O_NOFOLLOW)
     try:
         info=os.fstat(fd)
-        require(stat.S_ISREG(info.st_mode) and info.st_uid==0 and not info.st_mode&0o022,
+        require(stat.S_ISDIR(info.st_mode) and info.st_uid==os.geteuid(),
                 'unsafe provider lifecycle lock')
         fcntl.flock(fd,fcntl.LOCK_EX)
         current=path.lstat()
         require((current.st_dev,current.st_ino)==(info.st_dev,info.st_ino),'provider lock inode changed')
-        yield
+        # Cooperate with older already-running tooling. Its inode must not be
+        # unlinked while legacy waiters may still hold it; /run clears at reboot.
+        legacy=path/'rp1-gpclk-provider-lifecycle.lock'
+        with contextlib.ExitStack() as stack:
+            if legacy.exists() or legacy.is_symlink():
+                oldfd=os.open(legacy,os.O_RDWR|os.O_NOFOLLOW|os.O_NONBLOCK)
+                stack.callback(os.close,oldfd)
+                old=os.fstat(oldfd)
+                require(stat.S_ISREG(old.st_mode) and old.st_uid==os.geteuid() and not old.st_mode&0o022,'unsafe legacy provider lock')
+                fcntl.flock(oldfd,fcntl.LOCK_EX)
+                print('Retained legacy provider coordination inode until reboot.')
+            yield
     finally:os.close(fd)
 
 
@@ -3075,6 +3228,12 @@ def dispatch(args):
         require(record_digest(args.record)==expected['recordSha256'],'provider receipt changed since planning; obtain a fresh plan')
         old, _, reason=load_ownership_record(args.record)
         require(old is None or old.get('client')==ACTIVE_CLIENT,'provider belongs to another or unproven client')
+        if operation=='remove' and args.remove!='false' and old is not None and args.record==root_path(args.root,str(DEFAULT_RECORD)):
+            proof=retirement_proof(args.record,args.root)
+            if proof.exists() or proof.is_symlink():
+                previous,_,why=load_ownership_record(proof)
+                require(previous==old,'changed or foreign retirement proof retained: '+str(why))
+            else:atomic_json_new(proof,old)
         if operation=='apply': apply(args,runner)
         elif operation in {'prepare-runtime-update','prepare-runtime-removal'}: prepare_runtime_update(args,runner)
         elif operation=='activate-runtime': activate_runtime(args,runner)
@@ -3089,7 +3248,9 @@ def dispatch(args):
         if args.record.exists(): envelope['facade']=publish_facade()
         elif operation=='remove':
             verify_provider_absent(args.root.resolve(strict=True),runner)
-            retire_facades()
+            if retirement_proof(args.record,args.root).exists() or retirement_proof(args.record,args.root).is_symlink():
+                retire_terminal_state(args.record,args.root.resolve(strict=True),runner)
+            else:retire_facades()
             envelope['postconditions']={'providerAbsent':True,'transmissionAuthorized':False}
         return envelope
 

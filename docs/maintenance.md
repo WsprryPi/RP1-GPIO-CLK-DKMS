@@ -145,3 +145,7 @@ absence of active modules and endpoints. Follow the
 Administrator signing keys, trust entries, shared configuration, and unrelated
 files are retained. Removing a GPIO route alone is sufficient if you
 want to stop using that output while keeping the software installed.
+
+## Full removal
+
+Use the WsprryPi uninstall procedure for an application-managed provider. Successful full removal retires its dedicated runtime state and recovery inputs after package and module absence is verified. An empty route group created by that installation is removed when unused. Shared groups, administrator data and unrecognized files are preserved with a diagnostic. An interrupted retirement keeps its recovery receipt; retry the owning uninstall before reinstalling.
