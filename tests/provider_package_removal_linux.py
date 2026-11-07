@@ -74,7 +74,9 @@ def main():
             previous_manifest = json.loads((previous_assets/provider.MANIFEST_NAME).read_text())
             assert previous_manifest['releaseTag'] == manifest['releaseTag']
             assert previous_commit != manifest['sourceCommit']
-            previous_package = previous_assets/previous_manifest['package']['filename']
+            previous_package = previous_state/previous_manifest['package']['filename']
+            shutil.copyfile(previous_assets/previous_package.name, previous_package)
+            previous_package.chmod(0o600)
             previous_resolved = {'channel':'release', 'tag':previous_manifest['releaseTag'],
                                  'commit':previous_commit, 'manifest':previous_manifest,
                                  'packagePath':str(previous_package),
@@ -82,6 +84,7 @@ def main():
             provider.apply_release(previous_state, previous_resolved, record, Path('/'), runner)
             previous_receipt = record.read_bytes()
             previous_package.unlink()
+            (previous_assets/previous_package.name).unlink()
             assert not list(record.parent.glob('rp1-provider-migration.*'))
             provider.atomic_json(state/'plan.json', {
                 'schema':provider.STATE_SCHEMA, 'providerRepository':provider.REPOSITORY,
