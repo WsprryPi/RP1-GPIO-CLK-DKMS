@@ -22,6 +22,7 @@ sys.path.insert(0, '/source/scripts')
 sys.path.insert(0, '/source/tests')
 import package_lifecycle_linux as lifecycle
 import provider_lifecycle as provider
+import version_identity
 
 
 def main():
@@ -68,11 +69,19 @@ def main():
                             provider.REPOSITORY_URL], check=True)
             subprocess.run(['git', '-C', str(previous_source), 'checkout', '--detach', previous_commit], check=True)
             previous_assets = previous_state/'assets'
+            previous_version, previous_debian = version_identity.from_header(
+                (previous_source/'include/rp1_gpclk/version.h').read_text())
             subprocess.run([str(previous_source/'scripts/build-release-candidate'),
-                            '--version', manifest['productVersion'], '--source-commit', previous_commit,
+                            '--version', previous_version, '--source-commit', previous_commit,
                             '--output', str(previous_assets), '--release'], check=True)
             previous_manifest = json.loads((previous_assets/provider.MANIFEST_NAME).read_text())
-            assert previous_manifest['releaseTag'] == manifest['releaseTag']
+            assert previous_manifest['productVersion'] == previous_version
+            assert previous_manifest['debianVersion'] == previous_debian
+            transition = version_identity.transition(previous_version, previous_debian,
+                manifest['productVersion'], manifest['debianVersion'])
+            assert transition in ('same', 'replace', 'upgrade'), transition
+            same_tag = previous_manifest['releaseTag'] == manifest['releaseTag']
+            assert same_tag or transition in ('replace', 'upgrade')
             assert previous_commit != manifest['sourceCommit']
             previous_package = previous_state/previous_manifest['package']['filename']
             shutil.copyfile(previous_assets/previous_package.name, previous_package)
@@ -120,7 +129,12 @@ def main():
             assert not record.exists() and not provider.removal_pending_path(record).exists()
             assert all(not path.exists() for path in directories)
     result = {'status':'PASS', 'sourceCommit':manifest['sourceCommit'],
-              'sameTagReplacementWithoutOldPackage':True, 'predecessorSourceCommit':previous_commit,
+              'sameTagReplacementWithoutOldPackage':same_tag,
+              'versionUpgradeWithoutOldPackage':version_identity.compare(
+                  previous_version, manifest['productVersion']) < 0,
+              'nativeTransition':transition,
+              'predecessorProductVersion':previous_version,
+              'predecessorSourceCommit':previous_commit,
               'realPreflight':True, 'nativePackageRemoval':True,
               'nonemptyDirectoryPreserved':True, 'ownershipRecoveredOnRefusal':True,
               'hardwareQualification':False, 'rfQualification':False}
