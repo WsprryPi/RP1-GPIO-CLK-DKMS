@@ -67,4 +67,5 @@ troubleshooting
 command-line
 faq
 support
+licenses
 ```

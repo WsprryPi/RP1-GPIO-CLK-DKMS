@@ -284,6 +284,17 @@ class LinuxTests(unittest.TestCase):
         self.assertEqual({p.name for p in self.candidate.iterdir()}, c.ASSETS)
         self.assertEqual(c.git(self.source, 'status', '--porcelain=v1'), b'')
 
+    def test_package_retains_declared_mit_copyright_notice(self):
+        members, _ = c.package_members(self.candidate/c.DEB)
+        copyright_path = 'usr/share/doc/rp1-gpclk-dkms/copyright'
+        notice = next(m['bytes'].decode() for m in members if m['path'] == copyright_path)
+        declared = next(line.removeprefix('Copyright (c) ') for line in
+                        (self.source/'LICENSES/MIT.txt').read_text().splitlines()
+                        if line.startswith('Copyright (c) '))
+        default = next(stanza for stanza in notice.split('\n\n')
+                       if stanza.startswith('Files: *\n'))
+        self.assertIn(declared, default)
+
     def test_dirty_untracked_exact_commit_and_existing_output(self):
         def refused(commit=None, output=None):
             result = run(str(self.builder), '--version', c.VERSION,

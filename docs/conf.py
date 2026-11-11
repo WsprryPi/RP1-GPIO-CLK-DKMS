@@ -89,6 +89,7 @@ texinfo_documents = [
      "System administration"),
 ]
 epub_title = html_title
+# The notices page renders complete license texts in every export format.
 epub_exclude_files = ["search.html", "_static/LICENSE-WsprryPi-Docs.txt"]
 
 # Local static assets used by the HTML theme are not EPUB reading content.

@@ -3,7 +3,8 @@ Upstream-Name: RP1-GPIO-CLK-DKMS
 Source: https://github.com/WsprryPi/RP1-GPIO-CLK-DKMS
 
 Files: *
-Copyright: 2025-2026 WsprryPi contributors
+Copyright: 2026 Lee Bussy
+           2025-2026 WsprryPi contributors
 License: MIT
  Permission is hereby granted, free of charge, to any person obtaining a copy
  of this software and associated documentation files (the "Software"), to deal
@@ -24,7 +25,8 @@ License: MIT
  SOFTWARE.
 
 Files: src/* controller/* include/rp1_gpclk/* overlays/*
-Copyright: 2025-2026 WsprryPi contributors
+Copyright: 2026 Lee Bussy
+           2025-2026 WsprryPi contributors
 License: GPL-2.0-only or MIT
  This software may be distributed under the terms of either the GNU General
  Public License version 2 or the MIT license.
@@ -33,7 +35,8 @@ License: GPL-2.0-only or MIT
  version 2 can be found in /usr/share/common-licenses/GPL-2.
 
 Files: include/uapi/linux/*
-Copyright: 2025-2026 WsprryPi contributors
+Copyright: 2026 Lee Bussy
+           2025-2026 WsprryPi contributors
 License: GPL-2.0-only with Linux-syscall-note or MIT
  This userspace-visible header may be distributed under GPL-2.0-only with the
  Linux syscall note, or under the MIT license.
@@ -53,3 +56,12 @@ License: GPL-2.0-only with Linux-syscall-note or MIT
  Also note that the only valid version of the GPL as far as the kernel is
  concerned is this particular version (version 2), unless explicitly otherwise
  stated.
+
+Files: docs/conf.py docs/_ext/image_delivery.py
+       docs/_static/WsprryPi_Logo.png docs/_static/favicon.ico
+       docs/_static/css/custom.css docs/_static/js/accessibility.js
+       docs/_templates/layout.html engineering/documentation/*
+       tests/test_documentation_images.py
+Copyright: 2024 Lee Bussy
+           2026 Lee Bussy
+License: MIT

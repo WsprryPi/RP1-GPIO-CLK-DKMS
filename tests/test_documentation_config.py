@@ -2,12 +2,16 @@
 """Exercise documentation identity in local, detached and hosted checkouts."""
 
 import os
+from html.parser import HTMLParser
+from importlib.metadata import distribution
 from pathlib import Path
 import runpy
+import subprocess
 import sys
 import tempfile
 import unittest
 from unittest.mock import patch
+import zipfile
 
 
 DOCS = Path(__file__).resolve().parents[1] / "docs"
@@ -84,6 +88,55 @@ class DocumentationIdentityTests(unittest.TestCase):
             finally:
                 # Windows cannot remove a directory while it is the process cwd.
                 os.chdir(previous)
+
+    def test_exports_include_complete_distribution_notices(self):
+        class Text(HTMLParser):
+            def __init__(self, source):
+                super().__init__()
+                self.parts = []
+                self.feed(source)
+
+            def handle_data(self, data):
+                self.parts.append(data)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for builder in ("html", "epub"):
+                output = root / builder
+                result = subprocess.run(
+                    [sys.executable, "-m", "sphinx", "-b", builder, "-n", "-W", "-q",
+                     str(DOCS), str(output)], capture_output=True, text=True,
+                    env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                if builder == "html":
+                    page = output / "licenses.html"
+                    self.assertTrue(page.is_file(), "HTML omits the distribution notices")
+                    content = page.read_text(encoding="utf-8")
+                else:
+                    books = list(output.glob("*.epub"))
+                    self.assertEqual(len(books), 1)
+                    with zipfile.ZipFile(books[0]) as book:
+                        self.assertIn("licenses.xhtml", book.namelist())
+                        content = book.read("licenses.xhtml").decode("utf-8")
+                rendered = " ".join("".join(Text(content).parts).split())
+                for notice in (DOCS.parent / "LICENSES/MIT.txt",
+                               DOCS / "_static/LICENSE-WsprryPi-Docs.txt",
+                               DOCS / "_static/THIRD-PARTY-NOTICES.txt"):
+                    with self.subTest(builder=builder, notice=notice.name):
+                        self.assertIn(" ".join(notice.read_text(encoding="utf-8").split()),
+                                      rendered)
+
+    def test_dependency_licenses_match_distributed_notices(self):
+        notices = (DOCS / "_static/THIRD-PARTY-NOTICES.txt").read_text(encoding="utf-8")
+        for name, suffix in (("Sphinx", "licenses/LICENSE.rst"),
+                             ("sphinx-rtd-theme", "licenses/LICENSE"),
+                             ("Pygments", "licenses/LICENSE")):
+            with self.subTest(dependency=name):
+                package = distribution(name)
+                licenses = [p for p in package.files or () if str(p).endswith(suffix)]
+                self.assertEqual(len(licenses), 1)
+                upstream = package.locate_file(licenses[0]).read_text(encoding="utf-8")
+                self.assertIn(upstream.strip(), notices)
 
 
 if __name__ == "__main__":
