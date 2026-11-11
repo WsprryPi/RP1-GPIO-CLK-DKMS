@@ -13,7 +13,10 @@ jobs:
           fetch-depth: 0
       - name: Install build tools
         timeout-minutes: 15
-        run: sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update && sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y build-essential device-tree-compiler shellcheck debhelper dh-dkms python3-jsonschema zstd
+        run: |
+          printf '%s\n' 'https://mirrors.edge.kernel.org/ubuntu/' | sudo tee /etc/apt/apt-mirrors.txt > /dev/null
+          sudo apt-get -o APT::Update::Error-Mode=any -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=2 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y build-essential device-tree-compiler shellcheck debhelper dh-dkms python3-jsonschema zstd
       - name: Offline contracts and host C tests
         run: make check
       - name: Validate exact development manifest schema
