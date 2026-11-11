@@ -83,13 +83,20 @@ class Tests(unittest.TestCase):
                 'debianVersion': identity.DEBIAN, 'filename': identity.DEB})
 
     def test_single_declaration_propagates_to_new_source(self):
-        # An unrelated version/revision tests derivation, not today's literal.
+        for version, native, filename in (
+                ('7.12.3-rc.4', '7.12.3~rc.4-8', 'rp1-gpclk-dkms_7.12.3.rc.4-8_all.deb'),
+                ('7.12.3', '7.12.3-8', 'rp1-gpclk-dkms_7.12.3-8_all.deb')):
+            with self.subTest(version=version):
+                self.check_declaration_propagation(version, native, filename)
+
+    def check_declaration_propagation(self, version, native, filename):
+        # Unrelated versions/revisions test derivation, not today's literal.
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             shutil.copytree(ROOT/'scripts', root/'scripts', ignore=shutil.ignore_patterns('__pycache__'))
             shutil.copytree(ROOT/'include', root/'include')
             header = root/'include/rp1_gpclk/version.h'
-            text = header.read_text().replace('"'+identity.VERSION+'"', '"7.12.3-rc.4"')
+            text = header.read_text().replace('"'+identity.VERSION+'"', '"'+version+'"')
             text = re.sub(r'#define RP1_GPCLK_DEBIAN_REVISION "[^"]+"', '#define RP1_GPCLK_DEBIAN_REVISION "8"', text)
             header.write_text(text)
             shutil.copyfile(ROOT/'dkms.conf', root/'dkms.conf')
@@ -99,10 +106,10 @@ class Tests(unittest.TestCase):
                 cwd=root, env={**os.environ, 'PYTHONPATH': str(root/'scripts'), 'PYTHONDONTWRITEBYTECODE':'1'},
                 capture_output=True, text=True, check=True)
             value = json.loads(result.stdout)
-            self.assertEqual(value[:4], ['7.12.3-rc.4', '7.12.3~rc.4-8',
-                'rp1-gpclk-dkms_7.12.3.rc.4-8_all.deb', '7.12.3-rc.4'])
-            self.assertEqual(value[4]['gpio4'], 'v7.12.3-rc.4-rp1-gpio4')
-            self.assertIn('PACKAGE_VERSION="7.12.3-rc.4"', value[5])
+            self.assertEqual(value[:4], [version, native, filename, version])
+            self.assertEqual(value[4], {route: 'v'+version+'-rp1-'+route
+                                      for route in ('gpio4', 'gpio20')})
+            self.assertIn('PACKAGE_VERSION="'+version+'"', value[5])
 
     def payload(self, root, version='1.2.0', revision='1'):
         header = ('#define RP1_GPCLK_MODULE_VERSION "'+version+'"\n'

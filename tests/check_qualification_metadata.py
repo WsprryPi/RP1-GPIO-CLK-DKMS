@@ -4,7 +4,7 @@
 import sys as _identity_sys
 from pathlib import Path as _IdentityPath
 _identity_sys.path.insert(0, str(_IdentityPath(__file__).resolve().parents[1]/'scripts'))
-from version_identity import VERSION, DEBIAN, COMPATIBILITY, expand
+from version_identity import parse
 import copy
 import hashlib
 import importlib.util
@@ -97,9 +97,11 @@ class Tests(unittest.TestCase):
         value = fixture()
         observed = report(value)
         binding = observed['identities']['installedBinding']['value']
-        binding['productVersion'] = VERSION
+        core, _, _ = parse(value['software']['productVersion'])
+        changed_version = f'{core[0]}.{core[1]}.{core[2] + 1}'
+        binding['productVersion'] = changed_version
         binding['compatibilityIdentities'] = {
-            route: ('v' + VERSION + '-rp1-') + route for route in ('gpio4', 'gpio20')}
+            route: 'v' + changed_version + '-rp1-' + route for route in ('gpio4', 'gpio20')}
         # Even identical source/UAPI observations cannot transfer versioned evidence.
         result = self.interpret(value, observed, 'gpio4')
         self.assertEqual(result['status'], 'unattributed')

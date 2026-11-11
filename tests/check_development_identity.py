@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory() as directory:
         for version in ('0.99.0', '1.0.0', '1.0.1', '1.0.2', '9.9.9', 'unknown'):
             rejected(lambda: dev.transition_preflight(VERSION, 'test-kernel',
                 [f'rp1-gpclk-dkms/{version}, test-kernel, installed']),
-                'orphan' if version != 'unknown' and dev.compare_versions(VERSION, version) > 0 else 'explicit maintainer')
+                'orphan' if version != 'unknown' and dev.compare_versions(VERSION, version) >= 0 else 'explicit maintainer')
         rejected(lambda: dev.transition_preflight(VERSION, 'test-kernel',
             [('rp1-gpclk-dkms/' + VERSION + ', another-kernel, installed')]), 'another kernel')
         old = root/'usr/src/rp1-gpclk-dkms-9.9.9'
