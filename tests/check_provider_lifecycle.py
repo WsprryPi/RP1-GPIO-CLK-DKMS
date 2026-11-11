@@ -2050,6 +2050,109 @@ def release_record() -> dict[str, object]:
         "qualificationClaim": False,
     }
 
+class PassiveReleasePreparationTests(RunnerFixtures, unittest.TestCase):
+    """Actual passive predecessor inventory, with only native commands faked."""
+    def setUp(self):
+        super().setUp()
+        self.root = temporary_root(self, 'rp1-passive-predecessor-').resolve()
+        self.version = '1.0.0-rc.2'
+        self.manifest = valid_manifest(self.version)
+        self.manifest['debianVersion'] = '1.0.0~rc.2-1'
+        self.manifest['package']['filename'] = MOD.package_filename('1.0.0~rc.2-1')
+        names = ['usr/lib/systemd/system/rp1-gpclk-route-manager.socket',
+                 'usr/lib/systemd/system/rp1-gpclk-route-manager@.service',
+                 'usr/lib/rp1-gpclk-dkms/overlays/rp1-gpclk-gpio4.dtbo',
+                 'usr/lib/rp1-gpclk-dkms/overlays/rp1-gpclk-gpio20.dtbo']
+        for name in names:
+            self.manifest['packageInventory'].append({
+                'path': name, 'type': 'file', 'mode': '0644', 'sha256': digest(name.encode())})
+        self.manifest['packageInventory'].sort(key=lambda item: item['path'])
+        self.manifest['packageInventorySha256'] = digest(MOD.canonical(self.manifest['packageInventory']))
+        for member in self.manifest['packageInventory']:
+            path = self.root/member['path']; path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_bytes(b'uapi\n' if member['path'] == self.manifest['uapi']['path'] else member['path'].encode())
+            path.chmod(0o644)
+        modules = self.root/'lib/modules/fixture/updates/dkms'; modules.mkdir(parents=True)
+        for name in (MOD.MODULE_NAME, MOD.CONTROLLER_MODULE_NAME):
+            (modules/(name+'.ko')).write_bytes(name.encode())
+        (self.root/'proc').mkdir(); (self.root/'proc/modules').write_text('')
+        self.owned = {**release_record(), 'tag': 'v'+self.version, 'manifest': self.manifest,
+                      'moduleArtifacts': MOD.module_artifacts(self.root)}
+        self.record = self.root/'record.json'; write_record(self.record, self.owned)
+        self.responses = {
+            ('dpkg-query', '-W', '-f=${Status}\n${Version}\n', MOD.PACKAGE_NAME): MOD.CommandResult('install ok installed\n1.0.0~rc.2-1\n', '', 0),
+            ('dkms', 'status', '-m', MOD.DKMS_NAME): MOD.CommandResult('rp1-gpclk-dkms/1.0.0-rc.2, fixture, aarch64: installed\n', '', 0),
+        }
+        for name in (MOD.MODULE_NAME, MOD.CONTROLLER_MODULE_NAME):
+            for kernel in {MOD.platform.release(), 'fixture'}:
+                self.responses[('modinfo', '-k', kernel, '-F', 'version', name)] = MOD.CommandResult(self.version+'\n', '', 0)
+        for unit in ('rp1-gpclk-route-manager.socket', 'rp1-gpclk-route-manager@.service'):
+            self.responses[('systemctl', 'show', unit, '-p', 'LoadState', '-p', 'ActiveState')] = MOD.CommandResult('LoadState=loaded\nActiveState=inactive\n', '', 0)
+
+    def verify(self):
+        return MOD.verify_passive_release_runtime(self.owned, self.root, self.runner(self.responses))
+
+    def test_retry_after_removed_runtime_uses_predecessor_identity_without_effect(self):
+        state = self.root/'state'; state.mkdir(mode=0o700)
+        MOD.atomic_json(state/'plan.json', {
+            'schema': MOD.STATE_SCHEMA, 'providerRepository': MOD.REPOSITORY, 'dryRun': False,
+            'decision': {'install': True}, 'resolved': {'channel': 'release', 'tag': 'v1.0.0',
+            'commit': 'f'*40, 'manifest': valid_manifest('1.0.0')}})
+        args = fixture_args(['prepare-runtime-update', '--state-dir', str(state), '--record', str(self.record)])
+        before = self.record.read_bytes(); original = MOD.verify_passive_release_runtime
+        runner = self.runner(self.responses)
+        with mock.patch.object(MOD, 'validate_candidate_before_update'), \
+             mock.patch.object(MOD, 'verify_passive_release_runtime', side_effect=lambda record, root, commands: original(record, self.root, commands)), \
+             mock.patch.object(MOD, 'runtime_call', side_effect=AssertionError('incoming runtime version must not authenticate predecessor')), \
+             mock.patch.object(MOD, 'remove_empty_runtime_dropin'):
+            MOD.prepare_runtime_update(args, runner)
+        self.assertEqual(self.record.read_bytes(), before)
+        self.assertEqual(runner.passthrough_calls, [])
+        self.assertTrue(self.verify())
+
+    def test_changed_passive_unit_is_refused(self):
+        (self.root/'usr/lib/systemd/system/rp1-gpclk-route-manager.socket').write_bytes(b'changed')
+        with self.assertRaisesRegex(MOD.ContractError, 'passive package unit differs'): self.verify()
+
+    def test_missing_overlay_is_refused(self):
+        (self.root/'usr/lib/rp1-gpclk-dkms/overlays/rp1-gpclk-gpio4.dtbo').unlink()
+        with self.assertRaises(MOD.ContractError): self.verify()
+
+    def test_changed_predecessor_module_is_refused(self):
+        (self.root/'lib/modules/fixture/updates/dkms/rp1_route_controller.ko').write_bytes(b'changed')
+        with self.assertRaisesRegex(MOD.ContractError, 'module artifacts differ'): self.verify()
+
+    def test_unknown_runtime_library_file_is_refused(self):
+        (self.root/'usr/lib/rp1-gpclk-dkms/foreign.py').write_bytes(b'unknown')
+        with self.assertRaisesRegex(MOD.ContractError, 'unexpected residue'): self.verify()
+
+    def test_active_or_unknown_service_is_refused(self):
+        key = ('systemctl', 'show', 'rp1-gpclk-route-manager.socket', '-p', 'LoadState', '-p', 'ActiveState')
+        for value in ['LoadState=loaded\nActiveState=active\n', 'LoadState=loaded\n',
+                      'LoadState=loaded\nLoadState=loaded\n', 'LoadState=error\nActiveState=inactive\n']:
+            with self.subTest(value=value):
+                self.responses[key] = MOD.CommandResult(value, '', 0)
+                with self.assertRaises(MOD.ContractError): self.verify()
+
+    def test_inventory_failure_is_refused(self):
+        self.responses[('dkms', 'status', '-m', MOD.DKMS_NAME)] = MOD.CommandResult('', 'unavailable', 1)
+        with self.assertRaisesRegex(MOD.ContractError, 'inventory is unavailable'): self.verify()
+
+    def test_missing_module_observation_is_refused(self):
+        (self.root/'proc/modules').unlink()
+        with self.assertRaisesRegex(MOD.ContractError, 'member is missing'): self.verify()
+
+    def test_retained_runtime_state_still_requires_runtime_recovery(self):
+        path = self.root/'var/lib/rp1-gpclk-dkms/runtime-admin'; path.mkdir(parents=True)
+        self.assertFalse(self.verify())
+
+    def test_receipt_or_endpoint_cannot_skip_runtime_recovery(self):
+        self.owned['runtime'] = ApplyPolicyTests.runtime_update_record(self)['runtime']
+        self.assertFalse(self.verify()); self.owned.pop('runtime')
+        path = self.root/'dev/rp1-route-admin'; path.parent.mkdir(); path.touch()
+        self.assertFalse(self.verify())
+
+
 class OwnershipFormatTests(unittest.TestCase):
     def setUp(self):
         self.root = temporary_root(self, "rp1-ownership-v1-").resolve()

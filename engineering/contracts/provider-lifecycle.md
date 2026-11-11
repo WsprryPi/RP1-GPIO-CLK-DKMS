@@ -84,6 +84,8 @@ There is no automatic retry of a failed effect. Preserve the staged plan,
 receipt, and recovery inputs. A fresh installation request observes the actual
 interrupted state and uses the existing attributable recovery workflow.
 
+When completed runtime preparation has removed its installed entrypoint and runtime receipt, the facade verifies an already-passive release against the installed predecessor's manifest and recorded module hashes. Complete package identity, absent runtime state and endpoints, an exact passive overlay directory, and inactive manager units are required. Incoming tooling does not substitute its own package version for the predecessor's identity. Remaining runtime state continues through the public runtime recovery interface; changed or unproven passive state is refused. This verification performs no package, module or service effect and does not change the predecessor receipt.
+
 ## Removal and retained tools
 
 `status` validates and returns the provider receipt. `removal-plan` supplies an

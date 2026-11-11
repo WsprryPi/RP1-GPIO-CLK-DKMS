@@ -2718,6 +2718,41 @@ def require_unchanged_ownership(
     )
 
 
+def verify_passive_release_runtime(record: Mapping[str, Any], root: pathlib.Path,
+                                   runner: Runner) -> bool:
+    """Revalidate completed runtime removal against the installed predecessor.
+
+    Inverse deployment removes its own update entrypoint. A subsequent request
+    must not ask incoming-version runtime tooling to authenticate an outgoing
+    package baseline. Only a fully verified passive release can take this path;
+    retained runtime state still belongs to the public runtime recovery API.
+    """
+    if record["channel"] != "release" or "runtime" in record:
+        return False
+    installed_member(root, "proc/modules", "file")
+    inventory = release_runtime_inventory(
+        existing_inventory(root, runner, strict=True), root, record["manifest"])
+    if inventory["runtimeResidue"]:
+        return False
+    validate_release_removal(record, root, runner)
+    library = installed_member(root, "usr/lib/rp1-gpclk-dkms", "directory")
+    overlays = library / "overlays"
+    require(set(library.rglob("*")) == {
+        overlays, overlays / "rp1-gpclk-gpio4.dtbo", overlays / "rp1-gpclk-gpio20.dtbo"},
+        "unexpected residue beside passive predecessor overlays")
+    for unit in ("rp1-gpclk-route-manager.socket", "rp1-gpclk-route-manager@.service"):
+        response = runner.run(["systemctl", "show", unit, "-p", "LoadState", "-p", "ActiveState"])
+        lines = response.stdout.splitlines()
+        require(len(lines) == 2 and len(set(lines)) == 2,
+                "passive predecessor service observation is incomplete")
+        observed = dict(line.split("=", 1) for line in lines if "=" in line)
+        require(set(observed) == {"LoadState", "ActiveState"}
+                and observed["LoadState"] in {"loaded", "not-found"}
+                and observed["ActiveState"] in {"inactive", "failed"},
+                "passive predecessor runtime service is active or unknown")
+    return True
+
+
 def remove_owned_runtime_for_fresh_activation(
     record_path: pathlib.Path, record: Mapping[str, Any],
     record_identity: os.stat_result, runner: Runner,
@@ -2725,6 +2760,12 @@ def remove_owned_runtime_for_fresh_activation(
 ) -> None:
     if record.get("channel") == "development":
         validate_development_rollback_authority(record, pathlib.Path("/"))
+    if verify_passive_release_runtime(record, pathlib.Path("/"), runner):
+        require_unchanged_ownership(record_path, record, record_identity,
+                                   "passive predecessor runtime verification")
+        remove_empty_runtime_dropin()
+        print("Owned passive predecessor runtime absence verified; no runtime effect required.")
+        return
     candidate = None
     if isinstance(resolved, Mapping) and isinstance(resolved.get("checkout"), dict):
         source = revalidate_checkout(resolved["checkout"], runner)
