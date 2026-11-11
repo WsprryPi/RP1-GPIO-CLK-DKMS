@@ -1,0 +1,21 @@
+{
+  "SPDX-License-Identifier": "MIT",
+  "schemaVersion": 1,
+  "repository": "WsprryPi/RP1-GPIO-CLK-DKMS",
+  "releases": {
+    "v1.0.0-rc.1": {
+      "releaseId": 436950612,
+      "sourceCommit": "e417e00f1a8d45b7ffe0aa47971fb7e4dcdb7fb1",
+      "sourceTree": "85b7b9a7469713720c65fe04366c64ef949a1c11",
+      "manifestSha256": "5e502830e89c30e837ae2b26e26f57321127df05e9ece0ab7078e2d18f91c562",
+      "checksumsSha256": "8e1e750e9c74b52060d9464e9ce4cd049c73d4fcb22bd13498e361b3aae8ff56"
+    },
+    "v1.0.0-rc.2": {
+      "releaseId": 437945629,
+      "sourceCommit": "aee62c972ed56a340f4023656c288ae3067a2e93",
+      "sourceTree": "213b57dfa31cb437fb81181212b49ed9da224d47",
+      "manifestSha256": "624e1378c416f9e8447d1289bcc6f011694bf54e7b83ee44652fdc65661af51e",
+      "checksumsSha256": "814b22bb882864e2710f2593e0544873a89f4dd89773ced1864239c767e73f27"
+    }
+  }
+}

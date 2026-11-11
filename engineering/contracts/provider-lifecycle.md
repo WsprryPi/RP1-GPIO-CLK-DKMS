@@ -129,3 +129,30 @@ inventory, runtime, package installation/removal, service, overlay, or module
 operation. Its public result reports source commit/tree, provider identity,
 publication verification, candidate comparison, and `installationPerformed: false`.
 A release-profile rebuild alone never establishes publication or qualification.
+
+### Releases with retired Git tags
+
+Ordinary releases resolve their Git tag and require the installation manifest's
+source commit to match. Published releases explicitly enrolled in the maintained
+`scripts/retired_release_identities.json` integrity records can remain verifiable
+after tag retirement.
+Each record binds the exact release ID, source commit and tree, installation
+manifest SHA-256 and checksum-file SHA-256. The checksum file binds the package
+and other prepared artifacts. These are consumed source/integrity metadata, not
+qualification records or a current-version selection policy.
+
+The retained source authority is used only when the initial canonical tag-ref
+endpoint returns HTTP404. Authentication, transport, rate-limit, malformed-data
+and annotated-object errors do not permit this path. A present contradictory
+tag, recreated release, changed metadata, wrong tree or substituted package is
+rejected. Unenrolled releases, including stable `v1.0.0`, still require their tag.
+The provider clones the full reviewed commit from the canonical repository and
+retains all package, runtime-source, product-version, UAPI and consumer checks.
+Moving `target_commitish` values never establish source identity.
+
+Tag retirement does not remove or replace GitHub releases or prepared assets.
+Historical tag-based Git checkout commands and platform-generated tag archives
+are unavailable after retirement; use the recorded full commit or prepared source
+artifact instead. Maintained provider tooling owns the retired-tag verification
+path; older frozen tooling may still require its original tag. Retirement requires
+explicit review of these source-retrieval and consumer consequences before deletion.
