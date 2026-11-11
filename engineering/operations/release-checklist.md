@@ -62,18 +62,29 @@ Git operation, publication, installation, module administration, GPIO, or RF wor
   release notes for capabilities, prerequisites, limitations, update/recovery
   guidance, and artifact identity. A change to source or artifacts requires
   affected preparation and validation again.
+  Retain the minimum supporting source, environment, validation, approval, and
+  applicability records in persistent storage outside every checkout, separate
+  from public assets, through dependent verification and consumer handoff.
+  Before publication approval, complete the required WsprryPi review of the
+  exact provider candidate against identified consumer sources and maintained
+  criteria. This is separate from later published-artifact adoption and product
+  acceptance; do not advance the production pin or infer hardware authority.
 
 ## Publication
 
 - [ ] Obtain explicit publication authorization for the reviewed source, intended
   tag, release classification, notes, and exact validated artifacts. Resolve an
   existing tag or asset conflict explicitly; do not silently move or replace it.
+  Verify the pre-publication consumer candidate review and retained supporting
+  evidence before requesting approval.
 - [ ] Verify that the intended tag identifies the reviewed source commit. Use
   an ordinary editable GitHub release with the appropriate stable/prerelease
   classification. Do not enable release immutability, tag/asset locks, mandatory
   attestations, or equivalent permanent publication restrictions.
 - [ ] Upload the exact validated artifact set, including checksums and provenance
-  metadata. Do not rebuild, rewrite metadata, or substitute bytes during upload.
+  metadata, verify the completed release, then publish under the explicit
+  publication authorization obtained above. Do not rebuild, rewrite metadata,
+  or substitute bytes during upload.
 - [ ] Download the published assets and compare every asset with the retained
   validated bytes and digests. Verify repository, tag, source commit, asset names,
   release classification, and consumer-visible URLs. Local `published: false`
@@ -94,9 +105,14 @@ Git operation, publication, installation, module administration, GPIO, or RF wor
   and product acceptance checks appropriate to its change. Target installation,
   route administration, GPIO, transmission, and RF checks require their own
   authorization and evidence; module CI does not establish those results.
+  If required route qualification remains, keep acceptance open while completing
+  independent checks and establishing the exact candidate for qualification.
 - [ ] Keep GPIO4 and GPIO20 qualification separate. Apply the
   [qualification boundaries](qualification-metadata.md) without transferring
   evidence from another source, route, kernel, waveform, or operating setup.
+  Qualification may proceed once its own prerequisites and authorizations are
+  satisfied, even when application acceptance awaits that qualification. Then
+  reassess acceptance against the final tested combination.
 - [ ] Publish the module before a dependent WsprryPi release. Keep application
   source changes, reviews, commits, publication authorization, release, and
   acceptance decisions independently owned and recorded.
