@@ -461,13 +461,9 @@ or a separately published release, never the moving default branch for productio
 Automatic release selection includes published prereleases and uses SemVer
 precedence; a final version sorts above prereleases of the same version.
 Module and application reviews, commits, releases, and acceptance remain separate.
-Reviewed historical release integrity records may preserve exact source and
-artifact verification after explicit tag retirement, as defined by the
-[provider lifecycle contract](provider-lifecycle.md#releases-with-retired-git-tags).
-Current releases retain their required Git tag; historical retirement never
-permits unreviewed source substitution or changes published artifacts.
-Retain any historical tag required to keep its release and prepared assets
-publicly available; independent source identity does not replace hosting requirements.
+Retain origin tags required for public release hosting and source verification;
+removing an unused local tag does not remove the origin ref. See the
+[provider lifecycle contract](provider-lifecycle.md#release-tags-and-public-availability).
 No old release or externally owned qualification bundle qualifies changed source.
 See [qualification boundaries](../operations/qualification-metadata.md).
 

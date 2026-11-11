@@ -370,109 +370,8 @@ class CurrentDefaultTests(unittest.TestCase):
             self.assertEqual(set(state.iterdir()), {record})
 
 
-class RetiredTagTests(unittest.TestCase):
-    def setUp(self):
-        self.release = {**release("v2.1.0-rc.1"), "id": 123}
-        self.record = {"releaseId": 123, "sourceCommit": "a" * 40,
-                       "sourceTree": "b" * 40, "manifestSha256": digest(b"manifest"),
-                       "checksumsSha256": digest(b"checksums")}
-        patcher = mock.patch.object(MOD, "RETIRED_TAG_RELEASES",
-                                   {self.release["tag_name"]: self.record})
-        patcher.start()
-        self.addCleanup(patcher.stop)
-        self.client = mock.Mock()
-
-    def resolve(self, publication=None, manifest=b"manifest", checksums=b"checksums"):
-        return MOD.release_source_commit(self.client, publication or self.release,
-                                         manifest, checksums)
-
-    def test_reviewed_missing_tag_and_matching_present_tag_resolve_same_commit(self):
-        self.client.tag_commit.side_effect = MOD.ReleaseTagNotFound("404")
-        self.assertEqual(self.resolve(), "a" * 40)
-        self.client.tag_commit.side_effect = None
-        self.client.tag_commit.return_value = "a" * 40
-        self.assertEqual(self.resolve(), "a" * 40)
-
-    def test_unreviewed_missing_tags_including_stable_fail_closed(self):
-        self.client.tag_commit.side_effect = MOD.ReleaseTagNotFound("404")
-        for tag in ("v1.0.0", "v2.1.0-rc.2", "v9.0.0"):
-            with self.subTest(tag=tag), self.assertRaisesRegex(MOD.ContractError, "no reviewed"):
-                self.resolve({**self.release, "tag_name": tag})
-
-    def test_substituted_release_metadata_is_rejected_before_tag_resolution(self):
-        for value in (124, "123", True, None):
-            with self.subTest(id=value), self.assertRaisesRegex(MOD.ContractError, "identity differs"):
-                self.resolve({**self.release, "id": value})
-        for manifest, checksums in ((b"substituted", b"checksums"), (b"manifest", b"substituted")):
-            with self.subTest(manifest=manifest), self.assertRaisesRegex(MOD.ContractError, "metadata differs"):
-                self.resolve(manifest=manifest, checksums=checksums)
-        self.client.tag_commit.assert_not_called()
-
-    def test_changed_present_tag_is_rejected(self):
-        self.client.tag_commit.return_value = "c" * 40
-        with self.assertRaisesRegex(MOD.ContractError, "contradicts"):
-            self.resolve()
-
-    def test_other_api_failures_are_never_missing_tag_authority(self):
-        for error in (MOD.ContractError("403"), MOD.ContractError("timeout"),
-                      MOD.RemoteNotFound("missing annotated tag object"), ValueError("malformed JSON")):
-            with self.subTest(error=error), self.assertRaises(type(error)):
-                self.client.tag_commit.side_effect = error
-                self.resolve()
-
-    def test_only_initial_tag_ref_404_is_classified_as_missing_tag(self):
-        client = MOD.GitHubClient()
-        url = MOD.API_BASE + "/git/ref/tags/v2.1.0-rc.1"
-        for status in (404, 403, 429, 500):
-            error = MOD.urllib.error.HTTPError(url, status, "fixture", {}, None)
-            self.addCleanup(error.close)
-            with self.subTest(status=status), mock.patch.object(MOD.urllib.request, "urlopen", side_effect=error):
-                with self.assertRaises(MOD.ContractError) as caught:
-                    client.tag_commit("v2.1.0-rc.1")
-                self.assertEqual(isinstance(caught.exception, MOD.ReleaseTagNotFound), status == 404)
-        with mock.patch.object(client, "json", side_effect=[
-                {"object": {"type": "tag", "sha": "d" * 40}}, MOD.RemoteNotFound("object404")]):
-            with self.assertRaises(MOD.RemoteNotFound):
-                client.tag_commit("v2.1.0-rc.1")
-        with mock.patch.object(client, "json", return_value={"object": {"type": "tag", "sha": "bad"}}):
-            with self.assertRaisesRegex(MOD.ContractError, "malformed"):
-                client.tag_commit("v2.1.0-rc.1")
-
-    def test_retained_facades_include_metadata_and_preserve_older_closure_retirement(self):
-        with tempfile.TemporaryDirectory() as raw, mock.patch.object(
-                MOD, "FACADE_ROOT", pathlib.Path(raw) / "facade"):
-            value = MOD.publish_facade()
-            metadata = "scripts/retired_release_identities.json"
-            self.assertIn(metadata, value["files"])
-            folder = pathlib.Path(value["root"])
-            self.assertEqual(digest((folder / metadata).read_bytes()), value["files"][metadata])
-            MOD.retire_facades(validate_only=True)
-            # Existing content-addressed facades predate the metadata file.
-            (folder / metadata).unlink()
-            names = [p for p in folder.rglob("*") if p.is_file()]
-            key = digest(MOD.canonical({str(p.relative_to(folder)): digest(p.read_bytes()) for p in names}))
-            folder = folder.rename(folder.parent / key)
-            MOD.retire_facades(validate_only=True)
-            (folder / "foreign").write_bytes(b"unowned")
-            with self.assertRaisesRegex(MOD.ContractError, "foreign retained"):
-                MOD.retire_facades(validate_only=True)
-            (folder / "foreign").unlink()
-            MOD.retire_facades()
-            self.assertFalse(MOD.FACADE_ROOT.exists())
-
-
 class ReleaseTests(RunnerFixtures, unittest.TestCase):
     def test_release_resolution_binds_exact_runtime_source_checkout(self):
-        self.release_resolution_fixture()
-
-    def test_retired_tag_resolution_keeps_full_package_and_source_validation(self):
-        self.release_resolution_fixture(retired=True)
-
-    def test_retired_tag_resolution_refuses_wrong_source_tree(self):
-        with self.assertRaisesRegex(MOD.ContractError, "source tree differs"):
-            self.release_resolution_fixture(retired=True, tree="c" * 40)
-
-    def release_resolution_fixture(self, *, retired=False, tree="b" * 40):
         package = b"fixture package"
         manifest = valid_manifest()
         manifest["package"]["sha256"] = digest(package)
@@ -483,15 +382,11 @@ class ReleaseTests(RunnerFixtures, unittest.TestCase):
             f"{digest(package)}  {package_name}\n"
         ).encode()
         selected = release("v2.1.0")
-        selected["id"] = 123
         assets = {item["name"]: item["browser_download_url"] for item in selected["assets"]}
 
         class Client:
             def releases(self): return [selected]
-            def tag_commit(self, _tag):
-                if retired:
-                    raise MOD.ReleaseTagNotFound("fixture missing tag")
-                return "a" * 40
+            def tag_commit(self, _tag): return "a" * 40
             def bytes(self, url, **_kwargs):
                 return {
                     assets[MOD.MANIFEST_NAME]: manifest_bytes,
@@ -505,11 +400,7 @@ class ReleaseTests(RunnerFixtures, unittest.TestCase):
             uapi = state / "source/include/uapi/linux/rp1_gpclk.h"
             uapi.parent.mkdir(parents=True)
             uapi.write_bytes(b"uapi\n")
-            records = {"v2.1.0": {"releaseId": 123, "sourceCommit": "a" * 40,
-                       "sourceTree": "b" * 40, "manifestSha256": digest(manifest_bytes),
-                       "checksumsSha256": digest(checksums)}} if retired else {}
-            with mock.patch.object(MOD, "RETIRED_TAG_RELEASES", records), \
-                 mock.patch.object(MOD, "validate_package") as package_check, \
+            with mock.patch.object(MOD, "validate_package"), \
                  mock.patch.object(MOD, "clone_exact", return_value=checkout) as clone, \
                  mock.patch.object(MOD, "runtime_source_interface") as interface, \
                  mock.patch.object(MOD, "development_identity", return_value={"version": "2.1.0"}), \
@@ -519,12 +410,9 @@ class ReleaseTests(RunnerFixtures, unittest.TestCase):
                           "runtimeReadiness":MOD.RUNTIME_READINESS_CONTRACT,
                           "runtimeUpdate":MOD.RUNTIME_UPDATE_CONTRACT}
                 resolved = MOD.download_release(state, Client(), self.runner({
-                    ("git", "-C", str(state/"source"), "rev-parse", "HEAD^{tree}"):
-                        MOD.CommandResult(tree, "", 0),
                     ("git","-C",str(state/"source"),"show","a"*40+":release/wsprrypi-consumer-contract.json"):
                         MOD.CommandResult(json.dumps(contract),"",0)}))
             clone.assert_called_once_with(state, "commit", "a" * 40, mock.ANY)
-            package_check.assert_called_once()
             interface.assert_called_once_with(state / "source", mock.ANY)
             identity.assert_called_once_with(state / "source", "2.1.0")
             self.assertEqual(resolved["checkout"], checkout)

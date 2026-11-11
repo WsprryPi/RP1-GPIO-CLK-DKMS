@@ -79,24 +79,9 @@ MAX_EXPANDED_TAR_BYTES = 512 * 1024 * 1024
 MAX_ARCHIVE_PATH_BYTES = 1024
 MAX_RECORD_BYTES = 4 * 1024 * 1024
 
-# Reviewed identities for published releases whose Git tags may be retired.
-# These consumed integrity records are independent of editable release prose
-# and target_commitish. Never derive a missing tag's authority from its assets.
-RETIRED_TAG_RELEASES = json.loads(
-    pathlib.Path(__file__).with_name("retired_release_identities.json").read_text()
-)["releases"]
-
 
 class ContractError(RuntimeError):
     """A fail-closed contract refusal."""
-
-
-class RemoteNotFound(ContractError):
-    """An authoritative HTTP endpoint returned 404, not a transport failure."""
-
-
-class ReleaseTagNotFound(ContractError):
-    """Only the initial tag reference endpoint returned authoritative 404."""
 
 
 def canonical(value: Any) -> bytes:
@@ -612,10 +597,6 @@ class GitHubClient:
                 data = response.read(limit + 1)
                 require(len(data) <= limit, f"remote content exceeds the bounded size limit: {url}")
                 return data
-        except urllib.error.HTTPError as error:
-            if error.code == 404:
-                raise RemoteNotFound(f"remote object not found: {url}") from error
-            raise ContractError(f"failed to retrieve {url}: {error}") from error
         except (urllib.error.URLError, TimeoutError) as error:
             raise ContractError(f"failed to retrieve {url}: {error}") from error
 
@@ -636,10 +617,7 @@ class GitHubClient:
         raise ContractError("GitHub release enumeration exceeded the bounded page limit")
 
     def tag_commit(self, tag: str) -> str:
-        try:
-            payload = self.json(f"{API_BASE}/git/ref/tags/{urllib.parse.quote(tag, safe='')}")
-        except RemoteNotFound as error:
-            raise ReleaseTagNotFound(f"release tag not found: {tag}") from error
+        payload = self.json(f"{API_BASE}/git/ref/tags/{urllib.parse.quote(tag, safe='')}")
         require(isinstance(payload, dict) and isinstance(payload.get("object"), dict), "Git tag reference response is malformed")
         obj = payload["object"]
         for _ in range(8):
@@ -652,26 +630,6 @@ class GitHubClient:
             require(isinstance(annotated, dict) and isinstance(annotated.get("object"), dict), "annotated Git tag response is malformed")
             obj = annotated["object"]
         raise ContractError("Git tag indirection exceeds the bounded resolution limit")
-
-
-def release_source_commit(client: GitHubClient, release: Mapping[str, Any],
-                          manifest: bytes, checksums: bytes) -> str:
-    tag = str(release["tag_name"])
-    retained = RETIRED_TAG_RELEASES.get(tag)
-    if retained is not None:
-        require(type(release.get("id")) is int and release["id"] == retained["releaseId"],
-                "retired-tag release identity differs")
-        require(sha256_bytes(manifest) == retained["manifestSha256"]
-                and sha256_bytes(checksums) == retained["checksumsSha256"],
-                "retired-tag release metadata differs from reviewed identities")
-    try:
-        commit = client.tag_commit(tag)
-    except ReleaseTagNotFound:
-        require(retained is not None, "missing release tag has no reviewed source identity")
-        return retained["sourceCommit"]
-    require(retained is None or commit == retained["sourceCommit"],
-            "release tag contradicts reviewed source identity")
-    return commit
 
 
 def download_release(state_dir: pathlib.Path, client: GitHubClient, runner: Runner, *, release=None) -> dict[str, Any]:
@@ -699,7 +657,7 @@ def download_release(state_dir: pathlib.Path, client: GitHubClient, runner: Runn
         manifest_raw = strict_json(manifest_bytes)
     except json.JSONDecodeError as error:
         raise ContractError("selected release installation manifest is malformed") from error
-    tag_commit = release_source_commit(client, release, manifest_bytes, checksums_bytes)
+    tag_commit = client.tag_commit(tag)
     manifest = validate_manifest(manifest_raw, tag=tag, tag_commit=tag_commit)
     require(manifest["package"]["filename"] == package_name, "selected package asset differs from manifest")
     require(checksums.get(package_name) == manifest["package"]["sha256"], "SHA256SUMS package identity differs from manifest")
@@ -715,10 +673,6 @@ def download_release(state_dir: pathlib.Path, client: GitHubClient, runner: Runn
     os.chmod(state_dir / MANIFEST_NAME, 0o600)
     checkout = clone_exact(state_dir, "commit", tag_commit, runner)
     source = pathlib.Path(checkout["path"])
-    if tag in RETIRED_TAG_RELEASES:
-        require(git_output(runner, source, "rev-parse", "HEAD^{tree}")
-                == RETIRED_TAG_RELEASES[tag]["sourceTree"],
-                "retired-tag source tree differs from reviewed identity")
     require_compatible_runtime_source(source, tag_commit, runner)
     runtime_source_interface(source, runner)
     upstream_identity = development_identity(source, runner)
@@ -3049,7 +3003,7 @@ def public_plan(args):
 def publish_facade():
     """Retain a complete, content-addressed public entry point outside runtime teardown."""
     source = pathlib.Path(__file__).resolve().parents[1]
-    names = ['scripts/retired_release_identities.json','scripts/provider_lifecycle.py','scripts/provider_identity.py','scripts/version_identity.py','scripts/runtime_layout.py','scripts/development_workflow.py',
+    names = ['scripts/provider_lifecycle.py','scripts/provider_identity.py','scripts/version_identity.py','scripts/runtime_layout.py','scripts/development_workflow.py',
              'include/rp1_gpclk/version.h','include/uapi/linux/rp1_gpclk.h','include/uapi/linux/rp1_route_admin.h']
     files = {name: sha256_file(source/name) for name in names}
     key = sha256_bytes(canonical(files))
@@ -3091,11 +3045,7 @@ def retire_facades(validate_only=False):
         require(folder.is_dir() and not folder.is_symlink() and SHA256.fullmatch(folder.name), 'unknown facade residue')
         names=['scripts/provider_lifecycle.py','scripts/provider_identity.py','scripts/version_identity.py','scripts/runtime_layout.py','scripts/development_workflow.py',
                'include/rp1_gpclk/version.h','include/uapi/linux/rp1_gpclk.h','include/uapi/linux/rp1_route_admin.h']
-        present = {str(p.relative_to(folder)) for p in folder.rglob('*') if p.is_file()}
-        metadata = 'scripts/retired_release_identities.json'
-        require(present in (set(names), set(names) | {metadata}), 'foreign retained facade content')
-        if metadata in present:
-            names.append(metadata)
+        require({str(p.relative_to(folder)) for p in folder.rglob('*') if p.is_file()}==set(names), 'foreign retained facade content')
         require(not any(p.is_symlink() for p in folder.rglob('*')), 'foreign retained facade symlink')
         require(sha256_bytes(canonical({name:sha256_file(folder/name) for name in names}))==folder.name,
                 'modified retained provider facade')

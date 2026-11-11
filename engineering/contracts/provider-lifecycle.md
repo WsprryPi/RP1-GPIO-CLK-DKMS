@@ -130,37 +130,8 @@ operation. Its public result reports source commit/tree, provider identity,
 publication verification, candidate comparison, and `installationPerformed: false`.
 A release-profile rebuild alone never establishes publication or qualification.
 
-### Releases with retired Git tags
+### Release tags and public availability
 
-Ordinary releases resolve their Git tag and require the installation manifest's
-source commit to match. Published releases explicitly enrolled in the maintained
-`scripts/retired_release_identities.json` integrity records provide independent
-source authority when their tag is missing. Actual public release and asset
-availability remains a separate mandatory condition.
-Each record binds the exact release ID, source commit and tree, installation
-manifest SHA-256 and checksum-file SHA-256. The checksum file binds the package
-and other prepared artifacts. These are consumed source/integrity metadata, not
-qualification records or a current-version selection policy.
+Release verification resolves the selected Git tag and requires the installation manifest's source commit to match it. Missing tags do not permit a fallback to release prose, a moving branch, or an alternative source-identity record. Package, source, product-version and UAPI checks remain mandatory.
 
-The retained source authority is used only when the initial canonical tag-ref
-endpoint returns HTTP404. Authentication, transport, rate-limit, malformed-data
-and annotated-object errors do not permit this path. A present contradictory
-tag, recreated release, changed metadata, wrong tree or substituted package is
-rejected. Unenrolled releases, including stable `v1.0.0`, still require their tag.
-The provider clones the full reviewed commit from the canonical repository and
-retains all package, runtime-source, product-version, UAPI and consumer checks.
-Moving `target_commitish` values never establish source identity.
-
-Tag retirement must preserve GitHub releases and prepared assets.
-Deleting a GitHub release's tag can automatically convert the release to a draft
-and withdraw its public asset URLs. An integrity record cannot prevent that
-hosting effect or make a draft eligible. Keep the tag whenever it is required
-for public availability; tag retirement must not proceed on source-verification
-evidence alone. Restoring public status after an automatic draft conversion can
-reset publication timestamps, which must be recorded rather than presented as
-the original publication history.
-Historical tag-based Git checkout commands and platform-generated tag archives
-are unavailable after retirement; use the recorded full commit or prepared source
-artifact instead. Maintained provider tooling owns the retired-tag verification
-path; older frozen tooling may still require its original tag. Retirement requires
-explicit review of these source-retrieval and consumer consequences before deletion.
+Keep origin release tags required for public hosting. Deleting a GitHub release's tag can automatically convert that release to a draft and withdraw its public asset URLs. Restoring public status can reset publication timestamps; record that effect without presenting the reset time as original publication history. Removing an unused local tag does not remove the origin tag or affect GitHub hosting.
