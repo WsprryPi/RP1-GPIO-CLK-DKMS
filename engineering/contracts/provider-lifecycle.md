@@ -134,8 +134,9 @@ A release-profile rebuild alone never establishes publication or qualification.
 
 Ordinary releases resolve their Git tag and require the installation manifest's
 source commit to match. Published releases explicitly enrolled in the maintained
-`scripts/retired_release_identities.json` integrity records can remain verifiable
-after tag retirement.
+`scripts/retired_release_identities.json` integrity records provide independent
+source authority when their tag is missing. Actual public release and asset
+availability remains a separate mandatory condition.
 Each record binds the exact release ID, source commit and tree, installation
 manifest SHA-256 and checksum-file SHA-256. The checksum file binds the package
 and other prepared artifacts. These are consumed source/integrity metadata, not
@@ -150,7 +151,14 @@ The provider clones the full reviewed commit from the canonical repository and
 retains all package, runtime-source, product-version, UAPI and consumer checks.
 Moving `target_commitish` values never establish source identity.
 
-Tag retirement does not remove or replace GitHub releases or prepared assets.
+Tag retirement must preserve GitHub releases and prepared assets.
+Deleting a GitHub release's tag can automatically convert the release to a draft
+and withdraw its public asset URLs. An integrity record cannot prevent that
+hosting effect or make a draft eligible. Keep the tag whenever it is required
+for public availability; tag retirement must not proceed on source-verification
+evidence alone. Restoring public status after an automatic draft conversion can
+reset publication timestamps, which must be recorded rather than presented as
+the original publication history.
 Historical tag-based Git checkout commands and platform-generated tag archives
 are unavailable after retirement; use the recorded full commit or prepared source
 artifact instead. Maintained provider tooling owns the retired-tag verification

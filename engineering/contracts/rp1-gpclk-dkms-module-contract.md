@@ -466,6 +466,8 @@ artifact verification after explicit tag retirement, as defined by the
 [provider lifecycle contract](provider-lifecycle.md#releases-with-retired-git-tags).
 Current releases retain their required Git tag; historical retirement never
 permits unreviewed source substitution or changes published artifacts.
+Retain any historical tag required to keep its release and prepared assets
+publicly available; independent source identity does not replace hosting requirements.
 No old release or externally owned qualification bundle qualifies changed source.
 See [qualification boundaries](../operations/qualification-metadata.md).
 
