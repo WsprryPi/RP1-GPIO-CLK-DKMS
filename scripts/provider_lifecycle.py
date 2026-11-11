@@ -2740,7 +2740,7 @@ def verify_passive_release_runtime(record: Mapping[str, Any], root: pathlib.Path
     require(set(library.rglob("*")) == {
         overlays, overlays / "rp1-gpclk-gpio4.dtbo", overlays / "rp1-gpclk-gpio20.dtbo"},
         "unexpected residue beside passive predecessor overlays")
-    for unit in ("rp1-gpclk-route-manager.socket", "rp1-gpclk-route-manager@.service"):
+    for unit in ("rp1-gpclk-route-manager.socket", "rp1-gpclk-route-manager@runtime-inspect.service"):
         response = runner.run(["systemctl", "show", unit, "-p", "LoadState", "-p", "ActiveState"])
         lines = response.stdout.splitlines()
         require(len(lines) == 2 and len(set(lines)) == 2,

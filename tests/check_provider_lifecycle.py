@@ -2086,7 +2086,7 @@ class PassiveReleasePreparationTests(RunnerFixtures, unittest.TestCase):
         for name in (MOD.MODULE_NAME, MOD.CONTROLLER_MODULE_NAME):
             for kernel in {MOD.platform.release(), 'fixture'}:
                 self.responses[('modinfo', '-k', kernel, '-F', 'version', name)] = MOD.CommandResult(self.version+'\n', '', 0)
-        for unit in ('rp1-gpclk-route-manager.socket', 'rp1-gpclk-route-manager@.service'):
+        for unit in ('rp1-gpclk-route-manager.socket', 'rp1-gpclk-route-manager@runtime-inspect.service'):
             self.responses[('systemctl', 'show', unit, '-p', 'LoadState', '-p', 'ActiveState')] = MOD.CommandResult('LoadState=loaded\nActiveState=inactive\n', '', 0)
 
     def verify(self):
