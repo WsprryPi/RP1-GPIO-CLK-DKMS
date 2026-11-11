@@ -2,6 +2,9 @@
 
 # Source and package preparation
 
+Use the [release checklist](release-checklist.md) for readiness, artifact
+validation, publication, and independent WsprryPi coordination.
+
 The builder prepares unpublished artifacts from one exact clean Git commit in
 an identified Linux Debian packaging environment. The independent validator
 rebuilds the package and verifies source, control/payload inventories, checksums,

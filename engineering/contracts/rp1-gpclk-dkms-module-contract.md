@@ -129,8 +129,8 @@ fractional DMA's last value from surviving a cached no-op.
 Each attempt therefore makes at most two provider rate requests.
 Unverifiable restoration faults the endpoint, including when startup cleanup
 is followed by a second cleanup call. This changes neither the shared PLL's
-frequency nor other consumers' clocks. A different future parent contract must
-update the module identity and userspace divider planning together.
+frequency nor other consumers' clocks. Changes to the parent contract require
+matching module identity and userspace divider planning.
 
 Only `GPIO4` and `GPIO20` are supported. They are separate administrative routes
 with distinct overlays and qualification. The module accepts no arbitrary GPIO
@@ -284,7 +284,7 @@ routes, UAPI contracts, resources, ownership, and cleanup state. Hardware
 eligibility is structural rather than a marketing-model allowlist: the active
 endpoint, clock provider, DMA provider, and their ancestry must identify one RP1
 instance and expose the exact required resources. This permits Raspberry Pi 5
-and future Pi-5-like systems that retain the contracted RP1 topology, while
+and Compute Module 5 systems with the contracted RP1 topology, while
 rejecting lookalike names, missing resources, ambiguous routes, and non-RP1
 platforms.
 
@@ -415,16 +415,14 @@ authorization for their system effects. Output-inhibited administration, live
 GPIO behavior, timing, transmission, and RF are separate evidence classes and
 must not be inferred from one another.
 
-For the current dual-route development identity, structural compatibility also requires
-the route-specific endpoint node name emitted by the corresponding current
-overlay: `rp1-gpclk-dkms-gpio4` for route `1` or
+Structural compatibility requires the route-specific endpoint node name emitted
+by the corresponding overlay: `rp1-gpclk-dkms-gpio4` for route `1` or
 `rp1-gpclk-dkms-gpio20` for route `2`. Any other endpoint name is rejected even
 when its remaining properties are otherwise valid.
 
-The development build reports the route-specific identities in the
-[development identity contract](development-identity.md). Its exact RP1
-topology, kernel, architecture, module-version, resource, and route observations
-apply together.
+The [identity contract](development-identity.md) defines the route-specific
+identities. Exact RP1 topology, kernel, architecture, module-version, resource,
+and route observations apply together.
 Only the current exact identities can satisfy this contract; immutable
 module/UAPI/overlay hashes remain mandatory evidence.
 
@@ -444,10 +442,9 @@ Public package filenames use the GitHub-safe projection defined by the
 [version identity contract](versioning.md); native Debian control versions
 retain prerelease ordering.
 
-Version `1.0.0-rc.1` is a prerelease for evaluation. The
-[candidate procedure](../operations/release-candidate.md) defines exact clean-source
-builds, inventories, checksums, and independent reconstruction. The package owns
-both interlocked modules; neither is loaded at installation. Both route overlays
+The [release preparation procedure](../operations/release-candidate.md) defines
+exact clean-source builds, inventories, checksums, and independent reconstruction.
+The package owns both interlocked modules; neither is loaded at installation. Both route overlays
 remain inactive under `/usr/lib`. Package operations do not modify boot routes
 or operate services. Native helper compatibility is checked against the package preflight policy;
 unknown signing mechanisms require review and fail closed.
@@ -457,7 +454,7 @@ locks, required attestations, and equivalent permanent publication restrictions
 must not be enabled or required. A local release-profile flag identifies intended
 metadata only, with `published: false`; actual publication requires separate
 user authorization and independent source/download verification. The first
-stable `v1.0.0` release remains a separate readiness decision.
+stable release requires an explicit user readiness decision.
 
 WsprryPi consumes only explicitly selected, compatible, verified provider source
 or a separately published release, never the moving default branch for production.
@@ -474,7 +471,7 @@ separate runtime profile on the existing privileged socket. It binds the complet
 runtime inventory, serializes deployment and route effects, preserves removal
 errors and ownership, and restores application availability after successful switching
 through the [application restoration contract](runtime-application-restoration.md).
-Failed or unresolved transactions retain owned inhibition. This development
+Failed or unresolved transactions retain owned inhibition. This runtime
 profile does not change the packaged compatibility contract, transmission UAPI,
 release status, or hardware qualification. Application/browser adaptation remains
 owned and reviewed in WsprryPi.

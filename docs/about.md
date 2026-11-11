@@ -48,13 +48,9 @@ engineering test client. Start with the procedure in
 
 ## Software and support limits
 
-Version `1.0.0-rc.1` is a prerelease for evaluation.
-Neutral activation creates the route-manager group if absent, including when
-Debian package configuration has not run. Existing group membership and numeric
-identity are preserved. This source has distinct package, module, and route identities. Evidence for
-another repository or source does not qualify it.
-WsprryPi verifies exact source and artifact identities;
-matching a version string alone is insufficient.
+WsprryPi verifies the provider's exact source, package, module, and route
+identities. Matching a version string alone is insufficient. Qualification for
+another source or route does not qualify the installed provider.
 
 WsprryPi includes verified scoped evidence for each route with its application.
 No separate evidence-release download or refresh is needed. That evidence

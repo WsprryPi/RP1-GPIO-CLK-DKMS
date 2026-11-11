@@ -7,9 +7,8 @@ RP1 on Raspberry Pi 5 and Compute Module 5 systems. DKMS builds the modules for
 the installed stock Raspberry Pi kernel. The stock `clk-rp1` driver remains the
 clock provider; no custom kernel is required.
 
-Version `1.0.0-rc.1` is a prerelease for evaluation. WsprryPi independently
-controls production provider selection. Build results do not
-establish hardware, timing, waveform, spectral, or RF qualification.
+WsprryPi independently controls production provider selection. Build results
+do not establish hardware, timing, waveform, spectral, or RF qualification.
 
 ## Capabilities and use
 
@@ -48,7 +47,6 @@ Use [documentation maintenance](engineering/documentation.md) for local handbook
 builds. Target installation, module/overlay administration, GPIO, and RF work
 require their own authorization. Releases use ordinary GitHub releases;
 release/tag/asset locking and release immutability are not project requirements.
-The first stable release is reserved for an explicit readiness decision.
 
 ## Ownership and licensing
 

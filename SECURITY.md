@@ -2,7 +2,6 @@
 
 # Security policy
 
-This repository contains development software with no published release.
 Installation and build success do not qualify a kernel, route, or physical RF
 setup. Operations require authorization for the actual system and configuration.
 See [qualification boundaries](engineering/operations/qualification-metadata.md).

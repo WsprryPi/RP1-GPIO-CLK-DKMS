@@ -34,7 +34,7 @@ external URLs. Check changed fragments and command examples separately.
 Documentation regressions and Sphinx exports are a separate target, described
 below. None of these commands runs the disposable package-install harness.
 
-## CI assurance and measurement
+## CI requirements
 
 The push and pull-request workflows retain four separate jobs: Ubuntu AMD64
 `offline`, Ubuntu ARM64 `lifecycle`, Ubuntu `documentation`, and native Windows
@@ -55,19 +55,10 @@ boundaries, source/artifact identities, and required no-write and recovery cases
 A model or source-shape check supports its stated scope without establishing
 kernel concurrency or hardware behavior.
 
-Compare exact source, environment, coverage, and cold/warm conditions. Account
-for all replacement helpers, regressions, dependencies, and newly activated
-coverage. Separate code, physical files, process and compiler/linker invocations,
-contexts, and elapsed time. Allocate mixed fixture/assertion roles before claiming
-orchestration reductions. Unused fixtures and retired execution prompts receive
-no orchestration-saving credit. Local launch-count reductions cannot establish
-whole-CI savings. Record failed attempts, retries, queue delay, and overlapping
-job spans separately; aggregate spans are not billed cost.
-
-Parallel scenario execution requires a separately reviewed resource/ownership
-plan and an equivalent serial reference. Preserve per-scenario isolation, finite
-budgets, source/artifact attribution, full aggregation, failure propagation, and
-verified cleanup. Contention or lost defect detection invalidates a speed gain.
+Parallel scenarios require per-scenario isolation, finite budgets, exact
+source/artifact attribution, complete result aggregation, failure propagation,
+and verified cleanup. An equivalent serial reference checks that concurrency
+preserves coverage and defect detection.
 
 ## Representative kernel builds
 
@@ -353,23 +344,10 @@ arithmetic; its unwind/reference/dead-lifetime section is an independent model.
 These host oracles do not qualify Linux concurrency, device removal, DMA, or
 physical GPIO/RF behavior.
 
-All DTS fixtures are retained. Generic text discovery is not semantic probe or
-resource-conflict execution. The invalid-route and GPIO20 route-mismatch fixtures
-have named static assertions. The following fixtures require a separately
-identified semantic target consumer and its expected refusal/cleanup oracle
-before their qualification role or retirement can be resolved:
-
-| Retained fixture | Intended challenge | Disposition |
-| --- | --- | --- |
-| `rp1-gpclk-gpio4-bad-dma.dts` | Missing GPIO4 DMA binding | HOLD |
-| `rp1-gpclk-gpio20-bad-dma.dts` | Missing GPIO20 DMA binding | HOLD |
-| `rp1-gpclk-gpio4-conflict.dts` | Second GPIO4 resource consumer | HOLD |
-| `rp1-gpclk-gpio20-conflict.dts` | Second GPIO20 resource consumer | HOLD |
-| `rp1-gpclk-gpio4-dma-conflict.dts` | GPIO4 composite ownership with empty safe states | HOLD |
-| `rp1-gpclk-gpio20-dma-conflict.dts` | GPIO20 composite ownership with empty safe states | HOLD |
-| `rp1-gpclk-gpio4-missing-active.dts` | Missing GPIO4 active pinctrl state | HOLD |
-| `rp1-gpclk-gpio20-missing-active.dts` | Missing GPIO20 active pinctrl state | HOLD |
-
-Neither text discovery nor absence of a named repository caller establishes that
-these fixtures are unused. Target operations retain their separate authorization
-and safety requirements.
+The DTS fixtures cover invalid routes, route mismatches, missing DMA bindings,
+competing GPIO/DMA consumers, and missing active pinctrl states. The invalid-route
+and GPIO20 route-mismatch fixtures have named static assertions. The other DTS
+fixtures describe malformed topologies; repository text discovery does not
+execute probe or resource-conflict behavior. Target tests require separate
+authorization.
+Their presence alone establishes no semantic or hardware coverage.

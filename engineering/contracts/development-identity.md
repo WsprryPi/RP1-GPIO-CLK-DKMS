@@ -5,7 +5,7 @@
 The source supports finite
 generic events, fixed-memory DMA chunking, exact `GPIO4`/`GPIO20` selection,
 runtime switching through none, bounded cancellation/drain, and application restoration.
-WsprryPi owns present/future modes and product policy; DKMS enforces resource,
+WsprryPi owns application modes and product policy; DKMS enforces resource,
 ownership, capability and cleanup contracts without a product-mode allowlist.
 
 | Identity | Current development contract |
@@ -14,7 +14,7 @@ ownership, capability and cleanup contracts without a product-mode allowlist.
 | Debian identity and filename | Debian changelog and generated package metadata |
 | Package/DKMS name | `rp1-gpclk-dkms` |
 | Consumer module / endpoint | `rp1_gpclk_dkms` / `/dev/rp1-gpclk` |
-| Controller module | `rp1_route_controller`; part of the same candidate DKMS package |
+| Controller module | `rp1_route_controller`; part of the same DKMS package |
 | Source and schema destinations | Versioned paths recorded by the installation manifest |
 | Transmission UAPI | Exact `include/uapi/linux/rp1_gpclk.h` bytes and SHA-256 |
 | Administrative UAPI | Exact `include/uapi/linux/rp1_route_admin.h` bytes |

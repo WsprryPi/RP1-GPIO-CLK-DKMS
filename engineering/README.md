@@ -55,6 +55,7 @@ reviewed state, not a script to execute in sequence.
 - [Signing and trust](operations/signing.md)
 - [Diagnostics implementation and limits](operations/diagnostics.md)
 - [Release build and publication](operations/release-candidate.md)
+- [Reusable release checklist](operations/release-checklist.md)
 - [Route qualification evidence](operations/qualification-metadata.md)
 - [Documentation maintenance and publication](documentation.md)
 - [Reusable repository cleanup instructions](development/repository-cleanup-prompt.md)

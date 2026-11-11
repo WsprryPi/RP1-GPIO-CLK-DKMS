@@ -2,10 +2,8 @@
 
 # Install with WsprryPi
 
-Version `1.0.0-rc.1` is a prerelease for evaluation. WsprryPi independently
-controls provider selection and acceptance. The procedures below describe the
-managed provider interfaces; installation requires separately selected,
-accepted source.
+WsprryPi controls provider selection and acceptance. Installation uses its
+selected, verified provider source and managed interfaces.
 
 Use a WsprryPi version with RP1 support and its normal installer. It obtains
 the independently maintained provider, checks identities and prerequisites,
@@ -65,9 +63,9 @@ alone does not mean that the manager or an execution endpoint is ready.
 
 ## Release and development selection
 
-WsprryPi owns provider selection. Its default selects published `v1.0.0-rc.1`
-on all application branches. Explicit `RP1_GPCLK_DKMS_SOURCE=release` selects the
-latest eligible published release, including prereleases; `release:TAG` selects
+WsprryPi owns the default provider selection. Explicit
+`RP1_GPCLK_DKMS_SOURCE=release` selects the latest eligible published release,
+including prereleases; `release:TAG` selects
 an exact publication. Installer tooling is resolved independently from its
 maintained `devel` branch while package and runtime source retain their exact
 release identity.
