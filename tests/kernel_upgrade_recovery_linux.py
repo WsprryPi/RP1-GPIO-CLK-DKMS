@@ -51,6 +51,9 @@ def main():
     assert output.is_dir() and not any(output.iterdir())
     lifecycle.OLD = Path('/published-100/rp1-gpclk-dkms_1.0.0-1_all.deb')
     lifecycle.setup()  # Refuses network, host system mounts, or hardware capabilities.
+    # clone's upload-pack subprocess needs its own protected Git configuration.
+    # Trust only this read-only fixture input, including when Actions owns it.
+    subprocess.run(['git', 'config', '--global', '--add', 'safe.directory', '/source/.git'], check=True)
     old_kernel, new_kernel = lifecycle.KERNELS
     manifest = json.loads(Path('/candidate', provider.MANIFEST_NAME).read_text())
     previous = json.loads(Path('/published-100', provider.MANIFEST_NAME).read_text())
