@@ -10,8 +10,8 @@ The source distribution contains the corresponding license texts and
 per-file declarations.
 
 Third-party documentation assets retain their upstream licenses and notices
-below. The WsprryPi-Docs scaffold supplies adapted layout, styling, images,
-and accessibility behavior. Documentation build dependencies supply additional
+below. This handbook adapts its layout, styling, images, and accessibility
+features from WsprryPi-Docs. Documentation build dependencies supply additional
 styles, fonts, JavaScript, and generated search assets.
 
 ## Original project material
@@ -20,7 +20,7 @@ styles, fonts, JavaScript, and generated search assets.
 :language: text
 ```
 
-## WsprryPi-Docs scaffold
+## Documentation design and assets
 
 ```{literalinclude} _static/LICENSE-WsprryPi-Docs.txt
 :language: text
