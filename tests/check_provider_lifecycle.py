@@ -1481,15 +1481,34 @@ class ApplyPolicyTests(RunnerFixtures, unittest.TestCase):
         old = MOD.CommandResult("", "unsupported operation", 2)
         supported = MOD.CommandResult(json.dumps(capabilities), "", 0)
         with mock.patch.object(MOD, "RUNTIME_PROVIDER", installed):
-            runner = self.runner({("python3", str(installed), "capabilities"): old,
-                                 ("python3", str(candidate), "capabilities"): supported})
+            runner = self.runner({("python3", str(candidate), "capabilities"): supported})
             self.assertEqual(MOD.runtime_update_provider(runner, candidate), candidate)
             with self.assertRaisesRegex(MOD.ContractError, "exact compatible provider source"):
                 MOD.runtime_update_provider(self.runner({("python3", str(installed), "capabilities"): old}))
             runner = self.runner({("python3", str(installed), "capabilities"): supported})
-            self.assertEqual(MOD.runtime_update_provider(runner, candidate), installed)
+            self.assertEqual(MOD.runtime_update_provider(runner), installed)
+            self.assertEqual(len(runner.calls), 1)
+            runner = self.runner({("python3", str(candidate), "capabilities"): old})
+            with self.assertRaisesRegex(MOD.ContractError, "exact compatible provider source"):
+                MOD.runtime_update_provider(runner, candidate)
             self.assertEqual(len(runner.calls), 1)
 
+
+    def test_historical_runtime_ownership_is_readable_but_not_current_readiness(self):
+        record = development_record()
+        record['runtime'] = self.runtime_update_record()['runtime']
+        record['runtime']['targetKernel'] = '6.18.34+rpt-rpi-2712'
+        write_record(self.record, record)
+        with mock.patch.object(MOD.platform, 'release', return_value='6.18.60+rpt-rpi-2712'):
+            loaded, identity, reason = MOD.load_ownership_record(self.record)
+            self.assertEqual(loaded, record)
+            self.assertIsNone(reason)
+            with self.assertRaisesRegex(MOD.ContractError, 'different running kernel'):
+                MOD.validate_runtime_ownership(record['runtime'], record)
+        for invalid in (None, 1, '../old-kernel', ''):
+            record['runtime']['targetKernel'] = invalid
+            with self.assertRaisesRegex(MOD.ContractError, 'kernel identity'):
+                MOD.validate_runtime_ownership(record['runtime'], record, require_current_kernel=False)
 
     def test_release_receipt_does_not_require_development_rollback_metadata(self):
         record = self.runtime_update_record(); record['channel'] = 'release'

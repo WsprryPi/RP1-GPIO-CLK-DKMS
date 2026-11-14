@@ -1111,6 +1111,164 @@ class RemovalHost(UpdateHost):
 
 
 class UpdateTests(unittest.TestCase):
+    @contextlib.contextmanager
+    def previous_kernel_host(self, activated=False, predecessor=False):
+        host = RemovalHost()
+        if predecessor:
+            host.files.binding_validator = binding.validate_for_removal
+            value = host.value
+            value.update(productVersion='1.0.0', sourceCommit='e17d710499e8c7c630d2eda6adececd7f6b797f5',
+                compatibilityIdentities={r: 'v1.0.0-rp1-'+r for r in ('gpio4', 'gpio20')})
+            for module in value['modules'].values(): module['version'] = '1.0.0'
+            value.pop('artifactSetSha256')
+            value['artifactSetSha256'] = binding.canonical_digest(value)
+            host.system.raw = json.dumps(value, sort_keys=True).encode()
+            host.files.values[provider.deployment.BINDING] = host.system.raw
+            host.system.deployed['files'][provider.deployment.BINDING]['after'] = provider.deployment.encode(host.system.raw)
+            host.files.values[provider.deployment.LAST_DEPLOYMENT] = provider.deployment.journal_bytes(host.system.deployed)
+            host.binding = lambda: {'status': 'valid', 'value': value, 'sha256': provider.admin.digest(host.system.raw)} if host.files.read(provider.deployment.BINDING) else {'status': 'absent'}
+            host.system.binding = lambda: (host.system.raw, binding.validate_for_removal(value))
+        host.running_kernel = lambda: '6.18.60+rpt-rpi-2712'
+        host.previous_kernel_update_plan = lambda b, r: provider.Host.previous_kernel_update_plan(host, b, r)
+        host.previous_kernel_remove = lambda b, r, p: provider.Host.previous_kernel_remove(host, b, r, p)
+        host.system.deployment_raw = provider.deployment.journal_bytes(host.system.deployed)
+        if activated:
+            host.system.inhibited = True
+            host.system.application_active = False
+            planned = provider.activation.activation_plan(host.system)
+            provider.activation.ensure(host.system, planned,
+                provider.activation.plan_digest(planned), host.fixture.lock)
+            host.system.boot_id = '00000000-0000-0000-0000-000000000002'
+            host.system.controller = host.system.socket_active = False
+        with patch.object(provider.deployment, 'PreviousKernelRemovalFiles', return_value=host.files), \
+             patch.object(provider.activation, 'PreviousKernelRetirement', return_value=host.system), \
+             patch.object(provider.deployment, 'mutation_lock', host.fixture.lock):
+            yield host
+
+    def test_previous_kernel_retirement_then_actual_inverse_deployment(self):
+        with self.previous_kernel_host(activated=True) as host:
+            request = self.request(host)
+            plan = provider.update_plan(host, request)
+            self.assertEqual(plan['plan']['action'], 'retire-previous-kernel-activation')
+            reply = provider.update_execute(host, request, plan['planSha256'])
+            self.assertEqual(reply['status'], 'planned')
+            plan = provider.update_plan(host, request)
+            self.assertEqual(plan['plan']['action'], 'remove-previous-kernel-deployment')
+            reply = provider.update_execute(host, request, plan['planSha256'])
+            self.assertEqual(reply['status'], 'prepared')
+            self.assertTrue(reply['postconditions']['runtimeAbsent'])
+            self.assertFalse(reply['postconditions']['transmissionAuthorized'])
+            self.assertFalse(host.files.restored['companion']['transmit'])
+            self.assertFalse(host.system.controller or host.system.consumer)
+
+    def test_same_kernel_predecessor_uses_its_own_lock_and_digest(self):
+        with self.previous_kernel_host(predecessor=True) as host:
+            host.running_kernel = lambda: KERNEL
+            request = self.request(host)
+            detail = {'version': 1, 'action': 'old-helper-removal'}
+            reply = {'schemaVersion': 1, 'contract': provider.UPDATE_CONTRACT,
+                'operation': 'update-plan', 'identity': request, 'status': 'planned',
+                'plan': detail, 'planSha256': provider.canonical_digest(detail),
+                'postconditions': {'runtimeAbsent': False, 'transmissionAuthorized': False}}
+            def predecessor(requested, operation, approved=None):
+                self.assertFalse(host.busy)
+                self.assertEqual(requested, request)
+                if operation == 'update-execute':
+                    self.assertEqual(approved, reply['planSha256'])
+                    provider.deployment.remove(host.files, host.system.deployed,
+                        provider.deployment.plan_hash(host.system.deployed))
+                return reply
+            host.predecessor_call = predecessor
+            plan = provider.update_plan(host, request)
+            self.assertEqual(plan['plan']['action'], 'prepare-predecessor')
+            self.assertEqual(provider.update_execute(host, request, plan['planSha256'])['status'], 'prepared')
+
+    def test_published_100_binding_is_removable_by_101_after_kernel_change(self):
+        with self.previous_kernel_host(activated=True, predecessor=True) as host:
+            request = self.request(host)
+            plan = provider.update_plan(host, request)
+            self.assertEqual(plan['plan']['action'], 'retire-previous-kernel-activation')
+            provider.update_execute(host, request, plan['planSha256'])
+            plan = provider.update_plan(host, request)
+            reply = provider.update_execute(host, request, plan['planSha256'])
+            self.assertEqual(reply['status'], 'prepared')
+            with self.assertRaises(ValueError): binding.validate(host.value)
+            self.assertEqual(binding.validate_for_removal(host.value), host.value)
+            altered = copy.deepcopy(host.value); altered['sourceCommit'] = 'f'*40
+            with self.assertRaisesRegex(ValueError, 'unsupported predecessor'):
+                binding.validate_for_removal(altered)
+
+    def test_previous_kernel_removal_rejects_drift_before_writes(self):
+        for drift in ('file', 'external', 'active', 'journal', 'identity', 'transmit'):
+            with self.subTest(drift=drift), self.previous_kernel_host() as host:
+                request = self.request(host)
+                plan = provider.update_plan(host, request)
+                before = host.files.count
+                if drift == 'file': host.files.values[next(iter(provider.deployment.INVENTORY))] = b'foreign'
+                elif drift == 'external': host.files.external_valid = False
+                elif drift == 'active': host.files.removal_safe = False
+                elif drift == 'journal': host.system.records['transaction.json'] = {'foreign': True}
+                elif drift == 'identity': request['sourceCommit'] = 'f'*40
+                else: host.system.app['companion']['transmit'] = True
+                with self.assertRaises(ValueError):
+                    provider.update_execute(host, request, plan['planSha256'])
+                self.assertEqual(host.files.count, before)
+
+    def test_previous_kernel_retained_payload_must_match_binding(self):
+        with self.previous_kernel_host() as host:
+            path = next(iter(provider.deployment.INVENTORY))
+            host.files.values[path] = b'changed'
+            host.system.deployed['files'][path]['after'] = provider.deployment.encode(b'changed')
+            host.files.values[provider.deployment.LAST_DEPLOYMENT] = provider.deployment.journal_bytes(host.system.deployed)
+            with self.assertRaisesRegex(ValueError, 'inverse payload differs'):
+                provider.update_plan(host, self.request(host))
+
+    def test_previous_kernel_inverse_retries_after_each_durable_write(self):
+        for offset in range(1, len(provider.deployment.DESTINATIONS) + 3):
+            with self.subTest(offset=offset), self.previous_kernel_host() as host:
+                request = self.request(host)
+                plan = provider.update_plan(host, request)
+                host.files.crash = host.files.count + offset
+                try:
+                    provider.update_execute(host, request, plan['planSha256'])
+                except OSError:
+                    host.files.crash = None
+                    retry = provider.update_plan(host, request)
+                    provider.update_execute(host, request, retry['planSha256'])
+                self.assertTrue(provider.update_plan(host, request)['postconditions']['runtimeAbsent'])
+
+    def test_previous_kernel_binding_checks_old_module_resolution_and_hashes(self):
+        value = exact_binding()
+        data = {path: path.encode() for path in value['files']}
+        data.update({path: b'external' for path in value['externalFiles']})
+        for path in value['externalFiles']: value['externalFiles'][path] = provider.admin.digest(data[path])
+        for record in value['modules'].values():
+            data[record['path']] = b'module'
+            record['installedFileSha256'] = provider.admin.digest(b'module')
+        value.pop('artifactSetSha256')
+        value['artifactSetSha256'] = binding.canonical_digest(value)
+        raw = json.dumps(value).encode()
+        data[str(provider.admin.BINDING)] = raw
+        system = provider.activation.PreviousKernelRetirement()
+        def read(path, limit=1024*1024): return data[str(path)]
+        def command(argv):
+            self.assertEqual(argv[:3], ('/usr/sbin/modinfo', '-k', KERNEL))
+            return value['modules'][argv[-1]]['path']
+        with patch.object(system, 'trusted_file'), \
+             patch.object(provider.admin, 'safe_directory'), \
+             patch.object(provider.admin, 'read_regular', side_effect=read), \
+             patch.object(provider.admin, 'run', side_effect=command) as run:
+            self.assertEqual(system.binding()[1], value)
+            self.assertEqual(run.call_count, 2)
+            files = provider.deployment.PreviousKernelRemovalFiles()
+            with patch.object(files, 'preflight_removal') as preflight:
+                files.verify_external(value)
+                preflight.assert_called_once()
+            data[next(iter(value['files']))] = b'changed'
+            with self.assertRaisesRegex(ValueError, 'artifact mismatch'): system.binding()
+        with self.assertRaisesRegex(ValueError, 'cannot activate'): system.load_controller()
+        with self.assertRaisesRegex(ValueError, 'cannot activate'): system.start_socket()
+
     def test_update_absence_accepts_only_authenticated_passive_package_units(self):
         host = RemovalHost()
         host.files.values = {}

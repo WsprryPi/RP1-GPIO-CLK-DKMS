@@ -2,6 +2,14 @@
 
 # Maintenance and recovery
 
+For a kernel update, retain the previous kernel's RP1 module files and recovery
+records until provider maintenance has completed. DKMS builds modules for the
+new kernel when its matching headers are installed. A saved runtime deployment
+also needs maintenance; a successful DKMS build alone does not restore its route.
+A compatible recovery adapter can remove an inactive previous-kernel deployment
+with transmission disabled. Missing or changed recovery files require reviewed
+recovery rather than deleting ownership records or forcing module removal.
+
 Use WsprryPi's installer and update workflow for an installation it manages.
 Keep the previous installer/source or release details and administrator recovery
 backups until the update completes successfully. Do not install a package

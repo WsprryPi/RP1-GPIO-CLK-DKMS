@@ -205,10 +205,14 @@ class Linux:
         return value
 
     def binding(self):
+        return self._binding()
+
+    def _binding(self, *, previous_kernel=False):
         self.trusted_file(admin.BINDING, 0o644)
         raw = admin.read_regular(admin.BINDING)
-        value = runtime_binding.validate(admin.strict_json(raw))
-        if value['kernel'] != os.uname().release:
+        validator = runtime_binding.validate_for_removal if previous_kernel else runtime_binding.validate
+        value = validator(admin.strict_json(raw))
+        if value['kernel'] != os.uname().release and not previous_kernel:
             raise ValueError('activation binding kernel differs from running kernel')
         for path, expected in {**value['files'], **value['externalFiles']}.items():
             mode = 0o755 if path == runtime_binding.APPLICATION else 0o644
@@ -221,7 +225,10 @@ class Linux:
             self.trusted_file(Path(path), 0o644)
             if admin.digest(admin.read_regular(path, 32 * 1024 * 1024)) != record['installedFileSha256']:
                 raise ValueError('activation DKMS module mismatch: ' + path)
-            if admin.run(('/usr/sbin/modinfo', '-F', 'filename', module)) != path:
+            lookup = ('/usr/sbin/modinfo',)
+            if previous_kernel:
+                lookup += ('-k', value['kernel'])
+            if admin.run(lookup + ('-F', 'filename', module)) != path:
                 raise ValueError('activation module resolution mismatch: ' + module)
         return raw, value
 
@@ -363,6 +370,18 @@ class Linux:
 
     def capture_application(self):
         return application.neutral_capture()
+
+
+class PreviousKernelRetirement(Linux):
+    """Removal-only observations; never activate an old-kernel deployment."""
+    def binding(self):
+        return self._binding(previous_kernel=True)
+
+    def load_controller(self):
+        raise ValueError('previous-kernel retirement cannot activate modules')
+
+    def start_socket(self):
+        raise ValueError('previous-kernel retirement cannot activate the manager')
 
 
 def observe(system):

@@ -20,6 +20,7 @@ PROVIDER = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(PROVIDER / "scripts"), str(PROVIDER / "tests")]
 import runtime_provider as provider
 from check_runtime_provider import UpdateHost
+import check_runtime_provider as provider_fixture
 
 spec = importlib.util.spec_from_file_location("wsprrypi_installer", PROVIDER / "scripts/provider_lifecycle.py")
 installer = importlib.util.module_from_spec(spec)
@@ -120,6 +121,36 @@ class ContractTests(unittest.TestCase):
                     self.assertTrue(host.absent)
                     self.assertIn("update-execute", runner.calls)
                     self.assertTrue(set(runner.calls) <= {"capabilities", "update-plan", "update-execute"})
+
+    def test_normal_upgrade_uses_incoming_adapter_for_previous_kernel(self):
+        fixture = provider_fixture.UpdateTests()
+        with fixture.previous_kernel_host(activated=True, predecessor=True) as host:
+            value = host.value
+            journal = host.system.journal
+            receipt = {
+                'readinessContract': provider.CONTRACT,
+                'bindingSha256': provider.admin.digest(host.system.raw),
+                'artifactSetSha256': value['artifactSetSha256'],
+                'sourceCommit': value['sourceCommit'], 'productVersion': value['productVersion'],
+                'targetKernel': value['kernel'], 'compatibilityIdentities': value['compatibilityIdentities'],
+                'deploymentPlanSha256': provider.deployment.plan_hash(host.system.deployed),
+                'activationPlanSha256': journal['planSha256'], 'activationRequestId': journal['requestId'],
+                'controllerSession': journal['controller']['session'], 'controllerGeneration': 0,
+                'state': 'neutral_ready', 'route': None, 'output': 'disabled'}
+            record = {'schema': installer.RECORD_SCHEMA, 'channel': 'release',
+                      'sourceCommit': value['sourceCommit'],
+                      'manifest': {'productVersion': value['productVersion']}, 'runtime': receipt}
+            runner = PublicRunner(host)
+            with tempfile.TemporaryDirectory() as tmp:
+                old = Path(tmp)/'installed-v1.0.0.py'; old.write_text('# old helper must not run')
+                with mock.patch.object(installer, 'RUNTIME_PROVIDER', old), \
+                     mock.patch.object(installer.platform, 'release', return_value=host.running_kernel()), \
+                     mock.patch.object(installer, 'require_unchanged_ownership'):
+                    installer.recover_and_remove_owned_runtime(Path(tmp)/'record.json', record,
+                        object(), runner, PROVIDER/'scripts/runtime_provider.py')
+            self.assertTrue(host.update_absent())
+            self.assertIn('update-execute', runner.calls)
+            self.assertFalse(host.files.restored['companion']['transmit'])
 
     def test_installer_cannot_override_provider_identity_or_unsafe_state(self):
         for channel, bad in product(('development', 'release'), ("identity", "owner", "artifact")):

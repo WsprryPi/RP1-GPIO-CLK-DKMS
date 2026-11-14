@@ -18,6 +18,7 @@ import os
 import re
 from pathlib import Path
 import stat
+import subprocess
 import sys
 import uuid
 
@@ -68,6 +69,8 @@ def validate_idle(query, idle):
 
 
 class Host:
+    binding_validator = staticmethod(runtime_binding.validate)
+
     """Fixed production observations. Tests replace the complete adapter."""
     def __init__(self):
         self.files = deployment.Files()
@@ -75,7 +78,7 @@ class Host:
     def binding(self):
         try:
             raw = admin.read_regular(admin.BINDING)
-            value = runtime_binding.validate(admin.strict_json(raw))
+            value = self.binding_validator(admin.strict_json(raw))
             return {'status': 'valid', 'sha256': admin.digest(raw), 'value': value}
         except FileNotFoundError:
             return {'status': 'absent'}
@@ -340,6 +343,86 @@ class Host:
             raise ValueError('pending deployment differs from retained inverse')
         return admin.strict_json(raw or pending) if raw or pending else None
 
+    def predecessor_call(self, request, operation, approved=None):
+        bound = self.binding()
+        if bound.get('status') != 'valid':
+            raise ValueError('predecessor runtime binding is unavailable')
+        runtime_binding.validate_for_removal(bound['value'])
+        if any(item.get('status') != 'exact' for item in self.artifacts(bound).values()):
+            raise ValueError('predecessor recovery helper artifacts differ')
+        entry = '/usr/lib/rp1-gpclk-dkms/runtime_provider.py'
+        command = ['/usr/bin/python3', '-B', entry, operation, '--source-commit', request['sourceCommit']]
+        for field, flag in (('bindingSha256', '--binding-sha256'), ('artifactSetSha256', '--artifact-set-sha256'), ('deploymentPlanSha256', '--deployment-sha256')):
+            if request[field] is not None:
+                command.extend((flag, request[field]))
+        if approved is not None:
+            command.extend(('--plan-sha256', approved))
+        reply = subprocess.run(command, check=True, capture_output=True, text=True, timeout=120)
+        value = admin.strict_json(reply.stdout)
+        if (value.get('contract') != UPDATE_CONTRACT or type(value.get('schemaVersion')) is not int or value['schemaVersion'] != 1 or
+                value.get('operation') != operation or value.get('identity') != request or
+                value.get('status') not in ('planned', 'prepared') or
+                not isinstance(value.get('postconditions'), dict) or
+                set(value['postconditions']) != {'runtimeAbsent', 'transmissionAuthorized'} or
+                value['postconditions']['transmissionAuthorized'] is not False or
+                value['postconditions']['runtimeAbsent'] is not (value['status'] == 'prepared') or
+                (operation == 'update-execute' and value.get('planSha256') != approved)):
+            raise ValueError('predecessor recovery response differs')
+        if operation == 'update-plan' and (not isinstance(value.get('plan'), dict) or canonical_digest(value['plan']) != value.get('planSha256')):
+            raise ValueError('predecessor recovery plan digest differs')
+        return value
+
+    def previous_kernel_update_plan(self, binding, retained):
+        """Prove inactive, attributable old-kernel state without enabling it."""
+        if retained is None:
+            raise ValueError('previous-kernel removal requires retained inverse deployment')
+        deployment.journal_bytes(retained)
+        raw = deployment.decode(retained['files'][deployment.BINDING]['after'])
+        if admin.strict_json(raw) != binding['value'] or admin.digest(raw) != binding['sha256']:
+            raise ValueError('previous-kernel inverse binding differs')
+        for path, expected in binding['value']['files'].items():
+            payload = deployment.decode(retained['files'][path]['after'])
+            if payload is None or admin.digest(payload) != expected:
+                raise ValueError('previous-kernel inverse payload differs: ' + path)
+        if any(deployment.decode(retained['files'][path]['after']) is not None
+               for path in deployment.JOURNALS):
+            raise ValueError('previous-kernel inverse contains runtime journals')
+        files = deployment.PreviousKernelRemovalFiles()
+        files.preflight_removal()
+        files.verify_external(binding['value'])
+        system = activation.PreviousKernelRetirement()
+        capture = system.capture_application()
+        import runtime_application
+        runtime_application.validate_neutral_capture(capture)
+        pending = deployment.existing_deployment_state(files)
+        journal = system.read_record(activation.JOURNAL)
+        if journal is not None:
+            if pending is not None:
+                raise ValueError('activation journal remains during inverse deployment')
+            return 'retire-previous-kernel-activation', activation.retirement_plan(system)
+        if any(system.read_record(admin.STATE / name) is not None
+               for name in activation.RETIREMENT_TRANSACTIONS):
+            raise ValueError('previous-kernel route journals require reviewed recovery')
+        observed = {}
+        for path, record in retained['files'].items():
+            current = files.read(path)
+            allowed = (deployment.decode(record['before']), deployment.decode(record['after']))
+            if current not in (allowed if pending is not None else (allowed[1],)):
+                raise ValueError('previous-kernel destination changed: ' + path)
+            observed[path] = None if current is None else admin.digest(current)
+        return 'remove-previous-kernel-deployment', {
+            'deployment': retained, 'files': observed, 'bootId': system.boot(),
+            'application': capture, 'kernel': self.running_kernel()}
+
+    def previous_kernel_remove(self, binding, retained, reviewed):
+        with deployment.mutation_lock():
+            action, current = self.previous_kernel_update_plan(binding, retained)
+            if action != 'remove-previous-kernel-deployment' or current != reviewed:
+                raise ValueError('previous-kernel removal changed since review')
+            files = deployment.PreviousKernelRemovalFiles()
+            deployment.remove(files, retained, deployment.plan_hash(retained))
+        files.prune_removed_directories()
+
     def update_absent(self):
         baseline = self.files.packaged_baseline()
         services = self.services()
@@ -358,6 +441,13 @@ class Host:
                     ('rp1_route_controller', 'rp1_gpclk_dkms'))
             and all(self.endpoint(path)['status'] == 'absent' for path in ENDPOINTS.values())
             and self.socket()['status'] == 'absent')
+
+
+class UpdatePreparationHost(Host):
+    binding_validator = staticmethod(runtime_binding.validate_for_removal)
+
+    def __init__(self):
+        self.files = deployment.RemovalFiles()
 
 
 def update_request(source, binding=None, artifacts=None, deployed=None):
@@ -389,7 +479,7 @@ def update_plan(host, request):
                 raise ValueError('runtime absence is unproven')
         else:
             deployment.journal_bytes(retained)
-            old = runtime_binding.validate(admin.strict_json(deployment.decode(
+            old = runtime_binding.validate_for_removal(admin.strict_json(deployment.decode(
                 retained['files'][deployment.BINDING]['after'])))
             raw = deployment.decode(retained['files'][deployment.BINDING]['after'])
             if binding.get('status') != 'absent' and (binding.get('status') != 'valid' or
@@ -405,14 +495,17 @@ def update_plan(host, request):
             action, detail = 'remove-deployment', host.deployment_removal_plan()
     if binding.get('status') == 'valid':
         value = binding['value']
-        if (value['kernel'] != host.running_kernel() or
-                value['sourceCommit'] != request['sourceCommit'] or
+        if (value['sourceCommit'] != request['sourceCommit'] or
                 (request['bindingSha256'] is not None and
                  binding['sha256'] != request['bindingSha256']) or
                 (request['artifactSetSha256'] is not None and
                  value['artifactSetSha256'] != request['artifactSetSha256'])):
             raise ValueError('update installation identity mismatch')
-        if action != 'remove-deployment':
+        if value['kernel'] != host.running_kernel():
+            action, detail = host.previous_kernel_update_plan(binding, retained)
+        elif value['productVersion'] != runtime_binding.PRODUCT_VERSION:
+            action, detail = 'prepare-predecessor', host.predecessor_call(request, 'update-plan')
+        elif action != 'remove-deployment':
             if (not result['artifacts'] or any(item.get('status') != 'exact'
                     for item in result['artifacts'].values())):
                 raise ValueError('update refuses changed provider artifacts')
@@ -505,6 +598,20 @@ def installation_status(host):
 
 
 def update_execute(host, request, approved):
+    initial = update_plan(host, request)
+    if initial['plan']['action'] == 'prepare-predecessor':
+        if initial['planSha256'] != approved:
+            raise ValueError('stale update plan; inspect and plan again before mutation')
+        # The authenticated predecessor owns this lock and revalidates its digest.
+        # Holding it in the parent would deadlock the child recovery operation.
+        host.predecessor_call(request, 'update-execute', initial['plan']['evidence']['planSha256'])
+        following = update_plan(host, request)
+        if following['planSha256'] == approved:
+            raise ValueError('predecessor update did not advance; preserve evidence and re-plan')
+        return {'schemaVersion': 1, 'contract': UPDATE_CONTRACT,
+                'operation': 'update-execute', 'identity': request,
+                'planSha256': approved, 'status': following['status'],
+                'postconditions': following['postconditions']}
     with host.update_lock():
         reviewed = update_plan(host, request)
         if reviewed['planSha256'] != approved:
@@ -521,6 +628,15 @@ def update_execute(host, request, approved):
             host.activation_retire(detail, activation.plan_digest(detail))
         elif action == 'stop-manager':
             host.update_stop_socket(detail)
+        elif action == 'retire-previous-kernel-activation':
+            activation.retire(activation.PreviousKernelRetirement(), detail,
+                              activation.plan_digest(detail), deployment.mutation_lock)
+        elif action == 'remove-previous-kernel-deployment':
+            value = runtime_binding.validate_for_removal(admin.strict_json(deployment.decode(
+                detail['deployment']['files'][deployment.BINDING]['after'])))
+            old = {'value': value, 'sha256': admin.digest(deployment.decode(
+                detail['deployment']['files'][deployment.BINDING]['after']))}
+            host.previous_kernel_remove(old, detail['deployment'], detail)
         elif action == 'remove-deployment':
             host.deployment_remove(detail, deployment.plan_hash(detail))
         elif action != 'prepared':
@@ -900,7 +1016,7 @@ def main(host=None):
     parser.add_argument('--artifact-set-sha256')
     parser.add_argument('--deployment-sha256')
     args = parser.parse_args()
-    host = host or Host()
+    host = host or (UpdatePreparationHost() if args.operation in ('update-plan', 'update-execute') else Host())
     if args.operation == 'capabilities':
         emit({'schemaVersion': 1, 'contract': UPDATE_CONTRACT,
               'operation': 'capabilities', 'capabilities': ['update-plan', 'update-execute', 'installation-status'],

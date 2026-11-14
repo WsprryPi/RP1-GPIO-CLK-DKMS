@@ -144,10 +144,40 @@ The selected source must advertise the contract during source resolution,
 before package/application mutation, even when no provider is installed. An
 older installed provider may be migrated by the selected compatible source;
 this does not make older sources or release packages implement the new API.
+During an upgrade, the exact reviewed incoming source supplies the recovery
+adapter even when the installed predecessor advertises the same interface.
+A refused incoming adapter is not retried through the predecessor. Historical
+ownership receipts remain readable across kernel changes; they do not establish
+current-kernel readiness. The provider still validates the full retained
+installation before removal.
+
 The same interface applies to uninstall preparation. Application ownership
 records remain application-owned. No provider API reads or rewrites WsprryPi's
 INI or its installation record directly; existing application companion calls
 continue to own idle/service integration policy.
+
+## Removal after a kernel upgrade
+
+Update preparation can retire a deployment bound to a previous kernel without
+loading its modules. The v1.0.1 adapter explicitly supports the published v1.0.0 source identity.
+Same-kernel predecessor recovery delegates to its exact authenticated installed
+helper under that helper’s own lock; previous-kernel removal uses the incoming
+adapter. Package-baseline verification authenticates the outgoing package
+receipt and complete dpkg payload. Normal activation, readiness, and route selection still
+require the running kernel to match the binding. Removal verifies the retained
+inverse deployment, the bound installed files and application companion, and
+module hashes and resolution under the **bound kernel** using `modinfo -k`.
+The old kernel's installed module files and metadata must remain available.
+Missing or changed recovery inputs are refused.
+
+Both RP1 modules, their endpoints, the runtime socket, and the route-manager
+services must be inactive. The application companion must confirm transmission
+is disabled. Exact completed prior-boot activation evidence is retired as its
+own digest-bound step; dependent journals must be attributable and terminal.
+A subsequent plan permits only the inverse filesystem deployment. Interrupted
+inverse removal retains its normal before/after ownership checks and exact
+deployment identity. No step activates a route, enables output, changes boot
+configuration, or substitutes modules from the running kernel.
 
 ## Acceptance boundary
 
@@ -158,3 +188,11 @@ concurrency, unknown contracts, foreign artifacts, unsafe endpoints and output.
 Provider fixtures exercise the real classifier and lifecycle planners; consumer
 tests verify the public envelope and delegation without interpreting private
 plan contents. Offline tests do not qualify live installation, GPIO or RF.
+
+The restricted `tests/kernel_upgrade_recovery_linux.py` integration harness
+installs the published v1.0.0 package, adds a second kernel's headers and native
+DKMS build, and exercises the incoming provider's normal recovery and package
+upgrade with exact prior-boot runtime evidence. It verifies an identical repeat
+and preserves disabled transmission. Kernel boot identity and systemd are fixture
+boundaries; package management, module builds, artifact verification, journals,
+and inverse filesystem deployment execute without hardware capabilities.

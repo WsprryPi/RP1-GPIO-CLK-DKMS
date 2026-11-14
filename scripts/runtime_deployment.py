@@ -16,7 +16,7 @@ import tempfile
 from version_identity import DEBIAN
 import package_preflight
 import runtime_controller_admin as admin
-from runtime_binding import validate as validate_binding
+from runtime_binding import validate as validate_binding, validate_for_removal
 from runtime_layout import INVENTORY
 
 MAX_FILE_BYTES = 32*1024*1024
@@ -133,6 +133,11 @@ def payloads(directory):
 
 class Files:
     """Production paths only. Tests substitute this adapter, not environment paths."""
+    binding_validator = staticmethod(validate_binding)
+
+    def package_version(self, root):
+        return DEBIAN
+
     def packaged_baseline(self, root=Path('/')):
         """Authenticate passive package files that inverse deployment restores.
 
@@ -145,7 +150,7 @@ class Files:
             return {}
         status = admin.run(('/usr/bin/dpkg-query', '-W', '-f=${Status}\n${Version}',
                             'rp1-gpclk-dkms'))
-        if status != 'install ok installed\n'+DEBIAN:
+        if status != 'install ok installed\n'+self.package_version(root):
             raise ValueError('passive package baseline requires the bound package identity')
         owned = package_preflight.payload_ownership(root, complete=True)
         names = ('usr/lib/systemd/system/rp1-gpclk-route-manager.socket',
@@ -212,8 +217,8 @@ class Files:
             if Path('/sys/module', name).exists():
                 raise ValueError('loaded module; separately authorize neutral migration first')
 
-    def verify_external(self, binding):
-        validate_binding(binding)
+    def verify_external(self, binding, *, retained_kernel=False):
+        self.binding_validator(binding)
         for path, expected in binding['externalFiles'].items():
             admin.safe_directory(Path(path).parent)
             if admin.digest(admin.read_regular(path, 4*1024*1024)) != expected:
@@ -223,7 +228,10 @@ class Files:
             admin.safe_directory(Path(path).parent)
             if admin.digest(admin.read_regular(path, MAX_FILE_BYTES)) != record['installedFileSha256']:
                 raise ValueError('external DKMS module mismatch: '+path)
-            if admin.run(('/usr/sbin/modinfo', '-F', 'filename', module)) != path:
+            lookup = ('/usr/sbin/modinfo',)
+            if retained_kernel:
+                lookup += ('-k', binding['kernel'])
+            if admin.run(lookup + ('-F', 'filename', module)) != path:
                 raise ValueError('external DKMS module resolution mismatch: '+module)
 
     def quiesce(self):
@@ -388,6 +396,29 @@ class Files:
                 raise ValueError('unexpected residue blocks directory removal: '+str(path)) from error
 
 
+class RemovalFiles(Files):
+    """Authenticate the installed predecessor package without adopting its runtime."""
+    binding_validator = staticmethod(validate_for_removal)
+
+    def package_version(self, root):
+        receipt = admin.strict_json(package_preflight.regular(root/package_preflight.RECEIPT))
+        from version_identity import VERSION, REPOSITORY, LIFECYCLE
+        fields = {'repository', 'lifecycle', 'productVersion', 'debianVersion', 'payload', 'uapi', 'scripts'}
+        if (not isinstance(receipt, dict) or set(receipt) != fields or
+                receipt['repository'] != REPOSITORY or receipt['lifecycle'] != LIFECYCLE or
+                (receipt['productVersion'], receipt['debianVersion']) not in
+                    ((VERSION, DEBIAN), ('1.0.0', '1.0.0-1'))):
+            raise ValueError('unsupported passive predecessor package')
+        return receipt['debianVersion']
+
+
+class PreviousKernelRemovalFiles(RemovalFiles):
+    """Inverse deployment only, with exact module lookup in the retained kernel."""
+    def verify_external(self, binding):
+        self.preflight_removal()
+        super().verify_external(binding, retained_kernel=True)
+
+
 def plan(files, values):
     if set(values) != DESTINATIONS:
         raise ValueError('fixed deployment inventory required')
@@ -434,7 +465,7 @@ def apply(files, value, approved, recover=False, retain_barrier=False):
         allowed = (decode(record['before']), decode(record['after'])) if recover else (decode(record['before']),)
         if current not in allowed:
             raise ValueError('destination changed since review: '+path)
-    binding = validate_binding(admin.strict_json(decode(value['files'][BINDING]['after'])))
+    binding = getattr(files, 'binding_validator', validate_binding)(admin.strict_json(decode(value['files'][BINDING]['after'])))
     current_deployment = files.read(LAST_DEPLOYMENT)
     allowed_deployments = ((decode(value['previousDeployment']), encoded)
                            if recover else (decode(value['previousDeployment']),))

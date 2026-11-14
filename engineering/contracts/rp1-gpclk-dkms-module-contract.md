@@ -563,6 +563,10 @@ for provider recovery and inverse deployment. The provider interprets sessions,
 generations, journals and interrupted removal; applications retain version
 selection, installation provenance, configuration and service orchestration.
 The update contract also exposes a provider-validated installation receipt.
+Removal-only update preparation can retire an exact inactive deployment bound
+to a previous kernel. It verifies the retained kernel module artifacts and
+inverse deployment without loading modules; activation continues to require
+the current kernel. Missing old-kernel recovery inputs remain a refusal.
 The source-development manager remains passive-query-only.
 
 ### Terminal provider retirement

@@ -111,7 +111,7 @@ import sys
 sys.path.insert(0, str(ROOT/'scripts'))
 from build_runtime_binding import validate_module_version
 validate_module_version(('\x7fELF\x00version=' + VERSION + '\x00').encode())
-for payload in (b'\x00version=1.0.1\x00', b'\x00version=9.9.9\x00', b'\x00version=0.1.0\x00', b'no version',
+for payload in (b'\x00version=0.0.0\x00', b'\x00version=9.9.9\x00', b'\x00version=0.1.0\x00', b'no version',
                 ('\x00version=' + VERSION + '\x00\x00version=9.9.9\x00').encode()):
     try:
         validate_module_version(payload)

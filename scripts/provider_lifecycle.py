@@ -1037,13 +1037,14 @@ def load_ownership_record(path: pathlib.Path, *, repository: str | None = None) 
             string_fields = required - common - {"runtime", "createdDirectories"}
             require(all(isinstance(value[field], str) for field in string_fields), "development ownership evidence fields are invalid")
         if "runtime" in value:
-            validate_runtime_ownership(value["runtime"], value)
+            validate_runtime_ownership(value["runtime"], value, require_current_kernel=False)
         return value, info, None
     except (ContractError, OSError, UnicodeError, json.JSONDecodeError) as error:
         return None, None, str(error)
 
 
-def validate_runtime_ownership(runtime: Any, record: Mapping[str, Any]) -> dict[str, Any]:
+def validate_runtime_ownership(runtime: Any, record: Mapping[str, Any],
+                               *, require_current_kernel: bool = True) -> dict[str, Any]:
     required = {
         "readinessContract", "bindingSha256", "artifactSetSha256",
         "sourceCommit", "productVersion", "targetKernel",
@@ -1065,7 +1066,11 @@ def validate_runtime_ownership(runtime: Any, record: Mapping[str, Any]) -> dict[
     if record.get("channel") == "release":
         product = record.get("manifest", {}).get("productVersion")
     require(runtime["productVersion"] == product, "runtime product version differs from provider ownership")
-    require(runtime["targetKernel"] == platform.release(), "runtime ownership targets a different running kernel")
+    require(isinstance(runtime["targetKernel"], str)
+            and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+~-]{0,127}", runtime["targetKernel"]),
+            "runtime ownership kernel identity is invalid")
+    if require_current_kernel:
+        require(runtime["targetKernel"] == platform.release(), "runtime ownership targets a different running kernel")
     compatibility = runtime["compatibilityIdentities"]
     require(
         isinstance(compatibility, dict)
@@ -1683,7 +1688,9 @@ def validate_runtime_update_capabilities(reply: CommandResult) -> None:
 
 def runtime_update_provider(runner: Runner, candidate: pathlib.Path | None = None) -> pathlib.Path:
     """Negotiate a public interface; the provider owns predecessor compatibility."""
-    for provider in dict.fromkeys(path for path in (RUNTIME_PROVIDER, candidate) if path is not None):
+    # A reviewed incoming source must own migration, including fixes unavailable
+    # in the installed predecessor. Never retry a refused candidate via the old helper.
+    for provider in ((candidate,) if candidate is not None else (RUNTIME_PROVIDER,)):
         if not provider.is_file() or provider.is_symlink():
             continue
         reply = runner.run(["python3", str(provider), "capabilities"], check=False)
@@ -1702,7 +1709,8 @@ def recover_and_remove_owned_runtime(
     migration_provider: pathlib.Path | None = None,
 ) -> None:
     provider = runtime_update_provider(runner, migration_provider)
-    runtime = (validate_runtime_ownership(record.get("runtime"), record)
+    runtime = (validate_runtime_ownership(record.get("runtime"), record,
+                require_current_kernel=False)
                if "runtime" in record else {})
     identity = {"sourceCommit": record["sourceCommit"],
                 "bindingSha256": runtime.get("bindingSha256"),

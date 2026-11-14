@@ -18,17 +18,17 @@ def canonical_digest(value):
         separators=(',', ':')).encode()).hexdigest()
 
 
-def validate(binding):
+def validate(binding, *, product_version=PRODUCT_VERSION):
     fields = {'schemaVersion', 'contract', 'productVersion',
         'compatibilityIdentities', 'sourceCommit', 'kernel', 'files', 'modules',
         'externalFiles', 'uapiSha256', 'controllerNoteSha256',
         'consumerNoteSha256', 'artifactSetSha256'}
     if (not isinstance(binding, dict) or set(binding) != fields or
             type(binding.get('schemaVersion')) is not int or binding['schemaVersion'] != 1 or
-            binding.get('contract') != CONTRACT or binding.get('productVersion') != PRODUCT_VERSION or
+            binding.get('contract') != CONTRACT or binding.get('productVersion') != product_version or
             not isinstance(binding.get('kernel'), str) or
             not re.fullmatch(r'[A-Za-z0-9][A-Za-z0-9._+~-]{0,127}', binding['kernel']) or
-            binding.get('compatibilityIdentities') != COMPATIBILITY or
+            binding.get('compatibilityIdentities') != {route: f'v{product_version}-rp1-{route}' for route in ('gpio4', 'gpio20')} or
             not isinstance(binding.get('sourceCommit'), str) or
             not re.fullmatch('[0-9a-f]{40}', binding['sourceCommit']) or
             not isinstance(binding.get('files'), dict) or set(binding['files']) != set(INVENTORY) or
@@ -44,7 +44,7 @@ def validate(binding):
         suffix = r'\.ko(?:\.(?:xz|gz|zst|bz2))?'
         if (not isinstance(module, dict) or set(module) != module_fields or
                 module.get('name') != name or module.get('kernel') != kernel or
-                module.get('version') != PRODUCT_VERSION or
+                module.get('version') != product_version or
                 module.get('compression') not in {'none', 'xz', 'gz', 'zst', 'bz2'} or
                 not re.fullmatch(rf'/lib/modules/{re.escape(kernel)}/updates/dkms/{re.escape(name)}{suffix}',
                                  module.get('path', ''))):
@@ -74,3 +74,13 @@ def validate(binding):
     if canonical_digest(identity) != binding['artifactSetSha256']:
         raise ValueError('runtime binding artifact-set digest mismatch')
     return binding
+
+
+def validate_for_removal(binding):
+    """Explicit predecessor support for recovery, never current readiness."""
+    product = binding.get('productVersion') if isinstance(binding, dict) else None
+    if product == PRODUCT_VERSION:
+        return validate(binding)
+    if product != '1.0.0' or binding.get('sourceCommit') != 'e17d710499e8c7c630d2eda6adececd7f6b797f5':
+        raise ValueError('unsupported predecessor runtime identity')
+    return validate(binding, product_version='1.0.0')

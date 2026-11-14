@@ -86,3 +86,19 @@ jobs:
             --security-opt no-new-privileges -e PYTHONDONTWRITEBYTECODE=1 \
             -v "$PWD:/source:ro" -v /tmp/rp1-upgrade-results:/results \
             -w /source rp1-lifecycle python3 tests/package_upgrade_linux.py
+      - name: Published v1.0.0 upgrade after a kernel update
+        timeout-minutes: 20
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir /tmp/rp1-published-100 /tmp/rp1-kernel-upgrade-results
+          chmod 0777 /tmp/rp1-kernel-upgrade-results
+          gh release download v1.0.0 --repo WsprryPi/RP1-GPIO-CLK-DKMS --dir /tmp/rp1-published-100
+          (cd /tmp/rp1-published-100 && sha256sum -c SHA256SUMS)
+          docker run --rm --network none --cap-drop ALL \
+            --cap-add CHOWN --cap-add FOWNER --cap-add SETUID --cap-add SETGID \
+            --security-opt no-new-privileges -e PYTHONDONTWRITEBYTECODE=1 \
+            -v "$PWD:/source:ro" -v /tmp/rp1-lifecycle-inputs/candidate:/candidate:ro \
+            -v /tmp/rp1-published-100:/published-100:ro \
+            -v /tmp/rp1-kernel-upgrade-results:/results \
+            -w /source rp1-lifecycle python3 tests/kernel_upgrade_recovery_linux.py
