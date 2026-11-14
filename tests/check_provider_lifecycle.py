@@ -1426,6 +1426,17 @@ class ApplyPolicyTests(RunnerFixtures, unittest.TestCase):
         self.assertIn(record["runtime"]["bindingSha256"], calls.call_args_list[0].args[3])
 
 
+    def test_completed_execution_retires_empty_runtime_dropin(self):
+        record = self.runtime_update_record()
+        planned = self.public_update(record)
+        completed = self.public_update(record, prepared=True, operation='update-execute')
+        with mock.patch.object(MOD, 'runtime_update_provider', return_value=pathlib.Path('/provider')), \
+             mock.patch.object(MOD, 'runtime_call', side_effect=[planned, completed]), \
+             mock.patch.object(MOD, 'require_unchanged_ownership'), \
+             mock.patch.object(MOD, 'remove_empty_runtime_dropin') as cleanup:
+            MOD.recover_and_remove_owned_runtime(self.record, record, mock.Mock(), self.runner())
+        cleanup.assert_called_once_with()
+
     def test_update_rejects_bad_envelopes_and_stale_results(self):
         record = self.runtime_update_record()
         for key, value in (("schemaVersion", 2), ("schemaVersion", True), ("contract", "unknown"),

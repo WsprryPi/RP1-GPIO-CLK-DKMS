@@ -1743,6 +1743,7 @@ def recover_and_remove_owned_runtime(
         validate_runtime_update_envelope(completed, "update-execute", identity)
         require(completed.get("planSha256") == digest, "runtime update result does not match reviewed plan")
         if completed["status"] == "prepared":
+            remove_empty_runtime_dropin()
             return
     raise ContractError("runtime update exceeded its bounded steps; preserve evidence and re-plan")
 

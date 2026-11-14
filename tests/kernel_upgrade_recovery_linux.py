@@ -80,10 +80,10 @@ def main():
         # Install only the initial kernel; then expose the new headers and run
         # native DKMS autoinstall, exactly as a new kernel package does.
         future = Path('/lib/modules', new_kernel)
-        future.rename(root/'future-kernel')
+        shutil.move(str(future), str(root/'future-kernel'))
         with mock.patch.object(provider.platform, 'release', return_value=old_kernel):
             provider.apply_release(old_state, old_resolved, record, Path('/'), runner)
-        (root/'future-kernel').rename(future)
+        shutil.move(str(root/'future-kernel'), str(future))
         subprocess.run(['dkms', 'autoinstall', '-k', new_kernel], check=True)
         # A fixed, disabled application companion and systemd adapter model the
         # application/service boundary. Only the listed service operations work.
@@ -91,7 +91,7 @@ def main():
         companion.parent.mkdir(parents=True, exist_ok=True)
         companion.write_text('import json\nprint(json.dumps({"contract":"wsprrypi-route-application-v1","route":"gpio4","transmit":False,"config":"/usr/local/etc/wsprrypi.ini"}))\n')
         companion.chmod(0o755)
-        systemctl = Path(shutil.which('systemctl'))
+        systemctl = Path('/usr/bin/systemctl')
         systemctl.write_text('''#!/usr/bin/python3
 import sys
 args=sys.argv[1:]
@@ -105,7 +105,7 @@ if len(args)>=2 and args[0]=='show':
  for i,arg in enumerate(args):
   if arg=='-p':fields.extend(args[i+1].split(','))
   elif arg.startswith('--property='):fields.extend(arg.split('=',1)[1].split(','))
- for field in fields:print(field+'='+values[field])
+ for field in fields:print(values[field] if '--value' in args else field+'='+values[field])
  raise SystemExit(0)
 raise SystemExit(99)
 ''')
