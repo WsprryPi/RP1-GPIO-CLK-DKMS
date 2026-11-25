@@ -4,6 +4,15 @@
 
 #include <linux/types.h>
 
+enum rp1_gpclk_pin_transition {
+	RP1_GPCLK_PINS_SAFE,
+	RP1_GPCLK_PINS_ACTIVE,
+	RP1_GPCLK_PINS_UNCERTAIN,
+};
+
+enum rp1_gpclk_pin_transition rp1_gpclk_pins_after_activation(int error);
+int rp1_gpclk_pins_restored(enum rp1_gpclk_pin_transition previous, int error);
+
 struct rp1_gpclk_execution_ops {
 	int (*set_rate)(void *context);
 	int (*prepare)(void *context);

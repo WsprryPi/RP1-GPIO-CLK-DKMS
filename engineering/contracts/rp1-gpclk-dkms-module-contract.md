@@ -136,6 +136,17 @@ Only `GPIO4` and `GPIO20` are supported. They are separate administrative routes
 with distinct overlays and qualification. The module accepts no arbitrary GPIO
 parameter, combined overlay, or automatic route substitution.
 
+The paired overlays supply a GPIO input default and safe state and four GPCLK0
+states for nominal 2, 4, 8, and 12 mA. Probe checks the state phandles, pin
+configuration, and pinctrl provider on the same RP1 bus. A stale or incomplete
+overlay prevents endpoint registration. The validated state set determines the
+route's query and submission mask. Each submission selects one state before
+clock enable. Cleanup disables the clock, selects the safe state with pad
+output disabled and drive reset to 2 mA, then restores the saved clock state.
+An attempted activation can leave partial pinctrl changes. Cleanup attempts
+the safe state and retains the fault when a cached selection cannot establish
+recovery. Passive state and route teardown carry the same uncertainty.
+
 ## Endpoint discovery and platform-device ownership
 
 Each route overlay owns one route-specific enabled endpoint node beneath the existing `rp1`

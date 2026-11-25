@@ -171,20 +171,123 @@ int rp1_gpclk_dma_acquire(struct rp1_gpclk_device *device)
 	return 0;
 }
 
+static struct device_node *rp1_gpclk_gpio_provider(struct device_node *rp1)
+{
+	struct device_node *provider = NULL;
+	struct device_node *child;
+
+	for_each_available_child_of_node(rp1, child) {
+		if (!of_device_is_compatible(child, RP1_GPCLK_GPIO_PROVIDER_COMPATIBLE))
+			continue;
+		if (provider) {
+			of_node_put(child);
+			of_node_put(provider);
+			return NULL;
+		}
+		provider = of_node_get(child);
+	}
+	return provider;
+}
+
+static int rp1_gpclk_read_pin_state(struct device_node *node,
+				   struct rp1_gpclk_pin_state *state)
+{
+	const struct property *property;
+	bool bias_disabled = false;
+
+	/* Child groups or extra pinconf settings could change the validated mux. */
+	if (of_get_child_count(node))
+		return -EINVAL;
+	for_each_property_of_node(node, property) {
+		const char *name = property->name;
+
+		if (!strcmp(name, "pins") || !strcmp(name, "function") ||
+		    !strcmp(name, "drive-strength") || !strcmp(name, "name") ||
+		    !strcmp(name, "phandle") || !strcmp(name, "linux,phandle"))
+			continue;
+		if (property->length)
+			return -EINVAL;
+		if (!strcmp(name, "bias-disable"))
+			bias_disabled = true;
+		else if (!strcmp(name, "input-enable"))
+			state->input_enabled = true;
+		else if (!strcmp(name, "output-disable"))
+			state->output_disabled = true;
+		else
+			return -EINVAL;
+	}
+	if (!bias_disabled || of_property_count_strings(node, "pins") != 1 ||
+	    of_property_count_strings(node, "function") != 1 ||
+	    of_property_read_string(node, "pins", &state->pin) ||
+	    of_property_read_string(node, "function", &state->function) ||
+	    of_property_count_u32_elems(node, "drive-strength") != 1 ||
+	    of_property_read_u32(node, "drive-strength", &state->drive_ma))
+		return -EINVAL;
+	state->phandle = node->phandle;
+	return 0;
+}
+
+static __u32 rp1_gpclk_pinctrl_mask(struct rp1_gpclk_device *device)
+{
+	struct device_node *endpoint = device->dev->of_node;
+	struct device_node *nodes[RP1_GPCLK_PIN_STATE_COUNT] = { };
+	struct rp1_gpclk_pin_state states[RP1_GPCLK_PIN_STATE_COUNT] = { };
+	struct device_node *gpio;
+	const struct property *property;
+	unsigned int pinctrl_properties = 0;
+	unsigned int index;
+	__u32 mask = 0;
+
+	if (of_property_count_strings(endpoint, "pinctrl-names") !=
+	    RP1_GPCLK_PIN_STATE_COUNT)
+		return 0;
+	for_each_property_of_node(endpoint, property) {
+		if (!strncmp(property->name, "pinctrl-", sizeof("pinctrl-") - 1))
+			pinctrl_properties++;
+	}
+	if (pinctrl_properties != RP1_GPCLK_PIN_STATE_COUNT + 1)
+		return 0;
+	gpio = rp1_gpclk_gpio_provider(endpoint->parent);
+	if (!gpio)
+		return 0;
+	for (index = 0; index < RP1_GPCLK_PIN_STATE_COUNT; index++) {
+		char key[sizeof("pinctrl-255")];
+
+		snprintf(key, sizeof(key), "pinctrl-%u", index);
+		if (of_property_count_u32_elems(endpoint, key) != 1 ||
+		    of_property_read_string_index(endpoint, "pinctrl-names", index,
+						  &states[index].name))
+			goto put_nodes;
+		nodes[index] = of_parse_phandle(endpoint, key, 0);
+		if (!nodes[index] || nodes[index]->parent != gpio ||
+		    rp1_gpclk_read_pin_state(nodes[index], &states[index]))
+			goto put_nodes;
+	}
+	mask = rp1_gpclk_pin_states_validate(device->route, states);
+put_nodes:
+	for (index = 0; index < RP1_GPCLK_PIN_STATE_COUNT; index++)
+		of_node_put(nodes[index]);
+	of_node_put(gpio);
+	return mask;
+}
+
 int rp1_gpclk_pinctrl_acquire(struct rp1_gpclk_device *device)
 {
+	__u32 mask = rp1_gpclk_pinctrl_mask(device);
+	unsigned int index;
+
+	if (!mask)
+		return -EINVAL;
 	device->pinctrl = pinctrl_get(device->dev);
 	if (IS_ERR(device->pinctrl))
 		return PTR_ERR(device->pinctrl);
-	device->pins_default = pinctrl_lookup_state(device->pinctrl, "default");
-	if (IS_ERR(device->pins_default))
-		return PTR_ERR(device->pins_default);
-	device->pins_active = pinctrl_lookup_state(device->pinctrl, "active");
-	if (IS_ERR(device->pins_active))
-		return PTR_ERR(device->pins_active);
-	device->pins_safe = pinctrl_lookup_state(device->pinctrl, "safe");
-	if (IS_ERR(device->pins_safe))
-		return PTR_ERR(device->pins_safe);
+	for (index = 0; index < RP1_GPCLK_PIN_STATE_COUNT; index++) {
+		device->pins[index] = pinctrl_lookup_state(device->pinctrl,
+						  rp1_gpclk_pin_state_name(index));
+		if (IS_ERR(device->pins[index]))
+			return PTR_ERR(device->pins[index]);
+	}
+	device->supported_drive_ma_mask = mask;
 	return 0;
 }
 
@@ -248,9 +351,6 @@ void rp1_gpclk_resources_release(struct rp1_gpclk_device *device)
 	if (device->pinctrl && !IS_ERR(device->pinctrl)) {
 		pinctrl_put(device->pinctrl);
 		device->pinctrl = NULL;
-		device->pins_default = NULL;
-		device->pins_active = NULL;
-		device->pins_safe = NULL;
 	}
 	if (device->parent_clock) {
 		clk_put(device->parent_clock);

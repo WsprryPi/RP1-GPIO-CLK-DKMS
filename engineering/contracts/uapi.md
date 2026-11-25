@@ -90,10 +90,14 @@ change the kernel's selected source. `fractional_bits` must be
 `RP1_GPCLK_FRACTIONAL_BITS` (16) and `tick_divider` must be
 `RP1_GPCLK_TICK_DIVIDER` (511).
 
-Read `QUERY.supported_drive_ma_mask`. The current execution implementation
-advertises and accepts **2 mA only**, even though the header defines constants
-for other drive values. Header enum membership is not supported capability or
-measured RF power.
+Read `QUERY.supported_drive_ma_mask` before choosing `drive_ma`. The paired
+GPIO4 and GPIO20 overlays each provide nominal **2, 4, 8, and 12 mA** settings.
+The module reports the mask from the active route's validated pinctrl states
+and rejects values outside that mask. The submission retains its requested
+setting across gaps and DMA chunks. A gap selects the safe state, which
+disables pad output and resets drive to 2 mA. The next tone reapplies the
+submission's setting before enabling output. These values describe nominal pad
+settings. Conducted RF power requires separate measurement.
 
 `SUBMIT_EVENTS` accepts 1 through 64 tones and 1 through 512 events. Every
 event duration is at least `RP1_GPCLK_EVENT_DURATION_NS_MIN` (10,220 ns) and at

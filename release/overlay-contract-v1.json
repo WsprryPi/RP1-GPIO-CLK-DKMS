@@ -15,15 +15,15 @@
     "dmaId": "RP1_DMA_DMA_TICK_TICK0",
     "dmaName": "tx",
     "regNames": ["tick-dma0", "dma-tick0"],
-    "pinctrlNames": ["default", "active", "safe"]
+    "pinctrlNames": ["default", "active", "safe", "active-4ma", "active-8ma", "active-12ma"]
   },
   "routes": {
     "gpio4": {"routeId": 1, "pin": 4, "endpointLabel": "rp1_gpclk_dkms_gpio4", "endpointName": "rp1-gpclk-dkms-gpio4", "source": "overlays/rp1-gpclk-gpio4.dts", "dtbo": "rp1-gpclk-gpio4.dtbo"},
     "gpio20": {"routeId": 2, "pin": 20, "endpointLabel": "rp1_gpclk_dkms_gpio20", "endpointName": "rp1-gpclk-dkms-gpio20", "source": "overlays/rp1-gpclk-gpio20.dts", "dtbo": "rp1-gpclk-gpio20.dtbo"}
   },
   "evidenceIndependence": {"gpio4NeverAuthorizesGpio20": true, "gpio20NeverAuthorizesGpio4": true},
-  "safeState": {"function": "gpio", "inputEnable": true, "bias": "disabled", "appliesTo": ["default", "safe"]},
-  "activeState": {"function": "gpclk0", "driveStrengthMilliamp": 2},
+  "safeState": {"function": "gpio", "inputEnable": true, "outputDisable": true, "bias": "disabled", "driveStrengthMilliamp": 2, "appliesTo": ["default", "safe"]},
+  "activeStates": {"function": "gpclk0", "driveStrengthMilliampByState": {"active": 2, "active-4ma": 4, "active-8ma": 8, "active-12ma": 12}},
   "identityVerification": ["sourceSha256", "dtboSha256", "compatible", "endpoint", "route", "pin", "clock", "dma", "resources", "pinctrl"],
   "conflictCheckTiming": "before-any-persistent-write-or-backup",
   "routeChange": ["prove-idle", "inhibit-application-output", "remove-old-binding-proven-cleanup", "verify-both-pins-safe", "select-new-overlay", "revalidate-entire-compatibility-identity"]

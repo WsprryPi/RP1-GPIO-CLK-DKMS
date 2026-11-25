@@ -39,7 +39,7 @@
 #define RP1_GPCLK_QUIESCE_TIMEOUT_MS 3000U
 
 struct rp1_gpclk_execution_plan {
-	__u32 drive_ma;
+	unsigned int drive_state;
 	__u32 tone_count;
 	__u32 event_count;
 	struct rp1_gpclk_tone tones[RP1_GPCLK_MAX_TONES];
@@ -269,8 +269,7 @@ static int rp1_gpclk_machine_set_rate(void *argument)
 	unsigned long parent_rate;
 	int ret;
 
-	ret = rp1_gpclk_execution_tones_valid(plan->tones, plan->tone_count,
-					      plan->drive_ma);
+	ret = rp1_gpclk_execution_tones_valid(plan->tones, plan->tone_count);
 	if (ret)
 		return ret;
 	device->initial_tick_dma0_ctrl =
@@ -355,18 +354,19 @@ static int rp1_gpclk_machine_prepare(void *argument)
 
 static int rp1_gpclk_machine_select_active(void *argument)
 {
-	struct rp1_gpclk_device *device =
-		((struct rp1_gpclk_execution_context *)argument)->device;
+	struct rp1_gpclk_execution_context *context = argument;
+	struct rp1_gpclk_device *device = context->device;
 	int ret;
 
 	if (rp1_gpclk_target_fault(RP1_GPCLK_TARGET_FAULT_PIN_ACTIVE))
 		return -EIO;
-	ret = pinctrl_select_state(device->pinctrl, device->pins_active);
-
-	if (ret)
-		return ret;
-	device->pins_active_selected = true;
-	return 0;
+	if (READ_ONCE(device->pin_transition) != RP1_GPCLK_PINS_SAFE)
+		return -EIO;
+	WRITE_ONCE(device->pin_transition, RP1_GPCLK_PINS_UNCERTAIN);
+	ret = pinctrl_select_state(device->pinctrl,
+				   device->pins[context->plan->drive_state]);
+	WRITE_ONCE(device->pin_transition, rp1_gpclk_pins_after_activation(ret));
+	return ret;
 }
 
 static int rp1_gpclk_machine_readback(void *argument);
@@ -464,15 +464,20 @@ static int rp1_gpclk_machine_select_safe(void *argument)
 {
 	struct rp1_gpclk_device *device =
 		((struct rp1_gpclk_execution_context *)argument)->device;
+	enum rp1_gpclk_pin_transition previous = READ_ONCE(device->pin_transition);
 	int ret = 0;
 
-	if (device->pins_active_selected)
-		ret = pinctrl_select_state(device->pinctrl, device->pins_safe);
+	if (previous != RP1_GPCLK_PINS_SAFE) {
+		WRITE_ONCE(device->pin_transition, RP1_GPCLK_PINS_UNCERTAIN);
+		ret = pinctrl_select_state(device->pinctrl,
+					   device->pins[RP1_GPCLK_PIN_SAFE]);
+		ret = rp1_gpclk_pins_restored(previous, ret);
+		if (!ret)
+			WRITE_ONCE(device->pin_transition, RP1_GPCLK_PINS_SAFE);
+	}
 	if (ret)
-		dev_err(device->dev, "phase4d cleanup: safe pinctrl failed: %d\n",
+		dev_err(device->dev, "cleanup: safe pinctrl could not be established: %d\n",
 			ret);
-	else
-		device->pins_active_selected = false;
 	if (!ret && rp1_gpclk_target_fault(
 			    RP1_GPCLK_TARGET_FAULT_CLEANUP_PIN_SAFE))
 		ret = -EIO;
@@ -668,7 +673,7 @@ static int rp1_gpclk_run_descriptor(struct rp1_gpclk_device *device,
 		device->dma_submitted = false;
 		return -ECANCELED;
 	}
-	if (!device->pins_active_selected) {
+	if (READ_ONCE(device->pin_transition) != RP1_GPCLK_PINS_ACTIVE) {
 		device->execution_failure_reason = RP1_GPCLK_REASON_PINCTRL_FAILED;
 		ret = rp1_gpclk_execution_machine_activate(
 			&rp1_gpclk_machine_ops, context);
@@ -1001,6 +1006,7 @@ void rp1_gpclk_execution_activate(struct rp1_gpclk_device *device,
 int rp1_gpclk_execution_submit_events(
 	struct rp1_gpclk_device *device, __u64 owner,
 	struct rp1_gpclk_submit_events *request,
+	unsigned int drive_state,
 	const struct rp1_gpclk_tone *tones,
 	const struct rp1_gpclk_event *events)
 {
@@ -1011,8 +1017,7 @@ int rp1_gpclk_execution_submit_events(
 	plan = kzalloc(sizeof(*plan), GFP_KERNEL);
 	if (!plan)
 		return -ENOMEM;
-	if (rp1_gpclk_execution_tones_valid(tones, request->tone_count,
-					    request->drive_ma)) {
+	if (rp1_gpclk_execution_tones_valid(tones, request->tone_count)) {
 		kfree(plan);
 		return RP1_GPCLK_CORE_INVALID;
 	}
@@ -1041,7 +1046,7 @@ int rp1_gpclk_execution_submit_events(
 		kfree(plan);
 		return result;
 	}
-	plan->drive_ma = request->drive_ma;
+	plan->drive_state = drive_state;
 	plan->tone_count = request->tone_count;
 	plan->event_count = request->event_count;
 	memcpy(plan->tones, tones, sizeof(*tones) * request->tone_count);

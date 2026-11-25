@@ -7,13 +7,12 @@
 #include "rp1_gpclk/execution_policy.h"
 
 int rp1_gpclk_execution_tones_valid(const struct rp1_gpclk_tone *tones,
-				    __u32 tone_count, __u32 drive_ma)
+				    __u32 tone_count)
 {
 	__u64 integer;
 	__u32 index;
 
-	if (!tones || !tone_count || tone_count > RP1_GPCLK_MAX_TONES ||
-	    drive_ma != RP1_GPCLK_DRIVE_MA_2)
+	if (!tones || !tone_count || tone_count > RP1_GPCLK_MAX_TONES)
 		return -EINVAL;
 	integer = tones[0].lower_divider_q16 >>
 		RP1_GPCLK_DIVIDER_FRACTIONAL_BITS;

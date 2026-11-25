@@ -78,6 +78,7 @@ static long rp1_gpclk_query(struct rp1_gpclk_file *context, void __user *user)
 {
 	struct rp1_gpclk_query request;
 	__u32 route;
+	__u32 drive_mask;
 
 	if (copy_from_user(&request, user, sizeof(request)))
 		return -EFAULT;
@@ -91,6 +92,7 @@ static long rp1_gpclk_query(struct rp1_gpclk_file *context, void __user *user)
 		return -ENODEV;
 	}
 	route = context->device->route;
+	drive_mask = context->device->supported_drive_ma_mask;
 	mutex_unlock(&context->device->lock);
 	memset(&request, 0, sizeof(request));
 	request.header.size = sizeof(request);
@@ -102,7 +104,7 @@ static long rp1_gpclk_query(struct rp1_gpclk_file *context, void __user *user)
 	request.max_tones = RP1_GPCLK_MAX_TONES;
 	request.max_events = RP1_GPCLK_MAX_EVENTS;
 	request.max_dither_period = RP1_GPCLK_DITHER_PERIOD_MAX;
-	request.supported_drive_ma_mask = RP1_GPCLK_DRIVE_SUPPORT_2_MA;
+	request.supported_drive_ma_mask = drive_mask;
 	request.max_event_duration_ns = RP1_GPCLK_EVENT_DURATION_NS_MAX;
 	request.max_request_duration_ns = RP1_GPCLK_REQUEST_DURATION_NS_MAX;
 	request.dma_chunk_duration_ns = RP1_GPCLK_DMA_CHUNK_DURATION_NS;
@@ -169,6 +171,7 @@ static long rp1_gpclk_submit_events(struct rp1_gpclk_file *context,
 	struct rp1_gpclk_submit_events request;
 	struct rp1_gpclk_tone *tones;
 	struct rp1_gpclk_event *events;
+	int drive_state;
 	long result;
 
 	if (copy_from_user(&request, user, sizeof(request)))
@@ -180,6 +183,10 @@ static long rp1_gpclk_submit_events(struct rp1_gpclk_file *context,
 		return -EINVAL;
 	if (!rp1_gpclk_execution_allowed(context))
 		return -EACCES;
+	drive_state = rp1_gpclk_drive_state(request.drive_ma,
+					   context->device->supported_drive_ma_mask);
+	if (drive_state < 0)
+		return -EINVAL;
 	if (!request.tone_count || request.tone_count > RP1_GPCLK_MAX_TONES ||
 	    !request.event_count || request.event_count > RP1_GPCLK_MAX_EVENTS)
 		return -EINVAL;
@@ -198,7 +205,7 @@ static long rp1_gpclk_submit_events(struct rp1_gpclk_file *context,
 		result = -ENODEV;
 	else
 		result = rp1_gpclk_execution_submit_events(context->device,
-			context->owner, &request, tones, events);
+			context->owner, &request, drive_state, tones, events);
 	mutex_unlock(&context->device->lock);
 	if (!result && copy_to_user(user, &request, sizeof(request))) {
 		mutex_lock(&context->device->lock);
@@ -305,6 +312,7 @@ static long rp1_gpclk_get_snapshot(struct rp1_gpclk_file *context,
 	struct rp1_gpclk_snapshot request;
 	struct rp1_gpclk_core_snapshot core;
 	struct rp1_gpclk_device *device = context->device;
+	enum rp1_gpclk_pin_transition pins;
 	bool settled;
 	bool terminal;
 	__u64 elapsed = 0;
@@ -381,8 +389,10 @@ static long rp1_gpclk_get_snapshot(struct rp1_gpclk_file *context,
 		request.drain_state = RP1_GPCLK_DRAIN_COMPLETE;
 	else
 		request.drain_state = RP1_GPCLK_DRAIN_NONE;
-	request.gpio_safe = rp1_gpclk_observe_quiescent(
-		device->pins_active_selected, settled);
+	pins = READ_ONCE(device->pin_transition);
+	request.gpio_safe = pins == RP1_GPCLK_PINS_ACTIVE ? RP1_GPCLK_OBSERVATION_FALSE :
+		(pins == RP1_GPCLK_PINS_SAFE && settled ? RP1_GPCLK_OBSERVATION_TRUE :
+		 RP1_GPCLK_OBSERVATION_UNKNOWN);
 	request.clock_quiescent = rp1_gpclk_observe_quiescent(
 		device->clock_prepared || device->clock_enabled, settled);
 	request.dma_quiescent = rp1_gpclk_observe_quiescent(

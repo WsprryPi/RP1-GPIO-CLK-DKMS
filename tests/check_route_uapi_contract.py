@@ -30,7 +30,8 @@ shared = (
     'compatible = "wsprrypi,rp1-gpclk-dkms-v1"',
     'clocks = <&rp1_clocks RP1_CLK_GP0>, <&rp1_clocks RP1_PLL_SYS>',
     'clock-names = "gpclk", "parent"',
-    'pinctrl-names = "default", "active", "safe"',
+    'pinctrl-names = "default", "active", "safe",',
+    '"active-4ma", "active-8ma", "active-12ma";',
     'dmas = <&rp1_dma RP1_DMA_DMA_TICK_TICK0>',
     'dma-names = "tx"',
 )
@@ -44,7 +45,7 @@ if 'pins = "gpio20"' in GPIO4 or 'pins = "gpio4"' in GPIO20:
 for pin, overlay in ((4, GPIO4), (20, GPIO20)):
     safe = f"rp1_gpclk_gpio{pin}_safe"
     active = f"rp1_gpclk_gpio{pin}_active"
-    require(overlay, ('function = "gpio"', 'input-enable;', 'bias-disable;',
+    require(overlay, ('function = "gpio"', 'input-enable;', 'output-disable;', 'bias-disable;',
                       'function = "gpclk0"', 'drive-strength = <2>',
                       f'pinctrl-0 = <&{safe}>', f'pinctrl-1 = <&{active}>',
                       f'pinctrl-2 = <&{safe}>'), f"GPIO{pin} safe-state contract")

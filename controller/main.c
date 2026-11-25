@@ -30,7 +30,11 @@ static bool foreign_route_nodes(void)
 {
 	static const char * const names[] = {
 		"rp1-gpclk-gpio4-safe", "rp1-gpclk-gpio4-active",
+		"rp1-gpclk-gpio4-active-4ma", "rp1-gpclk-gpio4-active-8ma",
+		"rp1-gpclk-gpio4-active-12ma",
 		"rp1-gpclk-gpio20-safe", "rp1-gpclk-gpio20-active",
+		"rp1-gpclk-gpio20-active-4ma", "rp1-gpclk-gpio20-active-8ma",
+		"rp1-gpclk-gpio20-active-12ma",
 		"rp1-gpclk-dkms-gpio4", "rp1-gpclk-dkms-gpio20",
 	};
 	struct device_node *node;

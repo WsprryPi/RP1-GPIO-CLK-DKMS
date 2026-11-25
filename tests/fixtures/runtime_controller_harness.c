@@ -6,7 +6,7 @@ static void reset(void)
  state = (struct rp1_route_state){0};
  consumer = false; consumer_fault = false; pinned = false; generation = 0; session = 1234;
  references = 0; apply_error = 0; apply_id = 9; remove_error = 0; remove_id = 0;
- copyout_error = 0; foreign = false; rp1_present = true; allowed = true; route_lock = 0;
+ copyout_error = 0; foreign = false; foreign_name = NULL; rp1_present = true; allowed = true; route_lock = 0;
  apply_calls = remove_calls = 0;
 }
 static struct rp1_route_admin request(unsigned int op, unsigned int route)
@@ -21,6 +21,10 @@ static long call(struct rp1_route_admin *value)
 }
 int main(void)
 {
+ static const char * const additional_nodes[] = {
+  "rp1-gpclk-gpio4-active-4ma", "rp1-gpclk-gpio4-active-8ma", "rp1-gpclk-gpio4-active-12ma",
+  "rp1-gpclk-gpio20-active-4ma", "rp1-gpclk-gpio20-active-8ma", "rp1-gpclk-gpio20-active-12ma",
+ };
  struct rp1_route_admin value;
  int errors[] = {-EBUSY, -EINVAL, -EIO, -ENODEV};
  unsigned int i;
@@ -72,6 +76,10 @@ int main(void)
  assert(value.overlay_id == 9 && value.generation == 1 && references == 1);
  reset(); foreign = true; value = request(1, 1); assert(call(&value) == 0);
  assert(value.last_error == -EEXIST && apply_calls == 0);
+ for (i = 0; i < ARRAY_SIZE(additional_nodes); i++) {
+  reset(); foreign_name = additional_nodes[i]; value = request(1, i < 3 ? 1 : 2);
+  assert(call(&value) == 0 && value.last_error == -EEXIST && apply_calls == 0);
+ }
  reset(); value = request(1, 1); assert(call(&value) == 0);
  assert(rp1_route_consumer_attach() == 0); rp1_route_consumer_detach(true);
  assert(state.fault && state.error == -EIO);

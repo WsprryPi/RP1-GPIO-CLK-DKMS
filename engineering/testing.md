@@ -341,6 +341,12 @@ cleanup latches, stale generations, and dead-state admission refusal.
 The controller ioctl harness compiles actual controller code with aborting or
 controlled host stubs. `resource_policy.c` executes production route/target
 arithmetic; its unwind/reference/dead-lifetime section is an independent model.
+The drive dispatch harness compiles the production query, submission admission,
+and passive snapshot handlers. It exercises both routes, drive-mask refusal,
+state selection passed to the worker, output inhibition, and the cleanup latch.
+The worker source check guards cancellation and pin selection before clock
+enable. Compiled overlay checks resolve pinctrl phandles on a synthetic tree
+and test malformed, stale, and ambiguous route inputs.
 These host oracles do not qualify Linux concurrency, device removal, DMA, or
 physical GPIO/RF behavior.
 

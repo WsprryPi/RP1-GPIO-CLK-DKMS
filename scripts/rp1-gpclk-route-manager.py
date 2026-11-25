@@ -21,7 +21,7 @@ BEGIN="# BEGIN RP1-GPIO-CLK-DKMS OWNED ROUTE"; END="# END RP1-GPIO-CLK-DKMS OWNE
 UAPI_SHA256="4af14cdf60471ac4b318b10d7d70824a63c74029c2934e86bbdcd1b7f06cf633"
 SOURCE_DEVELOPMENT_BINDING_ENV="RP1_GPCLK_SOURCE_DEVELOPMENT_BINDING"
 ADOPTION_SCHEMA="rp1-gpclk-route-manager-current-boot-adoption"
-OVERLAY_SHA256={"gpio4":"96b157b50961ebf74915f84186494f9a0d5427faa59bf9729a8bd4c95dc5f681","gpio20":"b43691796628e4675f9f8cae8aef187cc670b3f7a3713cb67e352ee585c53713"}
+OVERLAY_SHA256={"gpio4":"4ef1c019771e77e68b319614398b51aae945a975e2d6e82ae8685f89c2d4c3c5","gpio20":"99a1c7e8116ede588326e9302360bdbdc11a6cc53ac21b00e12aa4417de7e4f6"}
 ROUTE_ID={"gpio4":1,"gpio20":2}; OPERATIONS={"query","preflight","apply-and-reboot","rollback","reconcile"}
 MUTATIONS={"apply-and-reboot","rollback","reconcile"}; SERVICES=("wsprrypi.service","soapyremote-server.service")
 REQUEST_ID=re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{7,63}"); ACTOR=re.compile(r"[A-Za-z0-9][A-Za-z0-9._:@/-]{1,127}")
