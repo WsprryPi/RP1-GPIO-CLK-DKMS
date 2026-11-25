@@ -20,6 +20,7 @@ CHECKS = (
     'check_uapi_static.py',
     'check_target_fault_contract.py',
     'check_clock_disabled_source_boundary.py',
+    'check_drive_dispatch.py',
     'check_pll_sys_parent_contract.py',
     'check_build_contract.py',
     'check_route_uapi_contract.py',

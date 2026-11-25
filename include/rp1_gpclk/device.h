@@ -12,6 +12,8 @@
 #include <linux/types.h>
 
 #include "rp1_gpclk/core.h"
+#include "rp1_gpclk/execution_machine.h"
+#include "rp1_gpclk/resource_policy.h"
 
 struct rp1_gpclk_device {
 	struct device *dev;
@@ -32,9 +34,8 @@ struct rp1_gpclk_device {
 	struct clk *initial_parent;
 	struct dma_chan *dma_chan;
 	struct pinctrl *pinctrl;
-	struct pinctrl_state *pins_default;
-	struct pinctrl_state *pins_active;
-	struct pinctrl_state *pins_safe;
+	struct pinctrl_state *pins[RP1_GPCLK_PIN_STATE_COUNT];
+	__u32 supported_drive_ma_mask;
 	phys_addr_t divider_phys;
 	dma_addr_t divider_dma;
 	resource_size_t tick_dma0_phys;
@@ -59,7 +60,7 @@ struct rp1_gpclk_device {
 	bool clock_prepared;
 	bool clock_enabled;
 	bool parent_selected;
-	bool pins_active_selected;
+	enum rp1_gpclk_pin_transition pin_transition;
 	bool operational_ready;
 	bool tick_state_captured;
 	unsigned long initial_rate;

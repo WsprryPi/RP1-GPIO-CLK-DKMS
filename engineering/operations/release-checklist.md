@@ -54,7 +54,8 @@ Git operation, publication, installation, module administration, GPIO, or RF wor
 - [ ] Require successful independent reconstruction and byte-for-byte
   reproducibility checks. Verify checksums, exact source attribution, both UAPI
   identities, overlays, compatibility, and packaged tool identities. Resolve
-  validation failures before proceeding.
+  validation failures before proceeding. Retain both route drive capability
+  records from the independent validator for the exact consumer candidate review.
 - [ ] Confirm that prepared metadata retains `published: false` and does not
   invent compatibility entries or qualification. Preparation status and observed
   publication are separate facts.

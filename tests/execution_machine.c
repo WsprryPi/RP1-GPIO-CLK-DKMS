@@ -107,6 +107,13 @@ int main(void)
 	fake.fail = OP_ACTIVE;
 	failures += expect(rp1_gpclk_execution_machine_activate(&ops, &fake) == -EIO,
 		"activation failure is returned to the production caller");
+	failures += expect(rp1_gpclk_pins_after_activation(-EIO) == RP1_GPCLK_PINS_UNCERTAIN &&
+		rp1_gpclk_pins_restored(RP1_GPCLK_PINS_UNCERTAIN, 0) == -EIO,
+		"a cached safe selection cannot clear partial activation");
+	failures += expect(rp1_gpclk_pins_after_activation(0) == RP1_GPCLK_PINS_ACTIVE &&
+		rp1_gpclk_pins_restored(RP1_GPCLK_PINS_ACTIVE, 0) == 0 &&
+		rp1_gpclk_pins_restored(RP1_GPCLK_PINS_ACTIVE, -EBUSY) == -EBUSY,
+		"successful activation requires successful safe selection");
 
 	for (index = OP_READBACK; index < OP_COUNT; index++) {
 		memset(&fake, 0, sizeof(fake));

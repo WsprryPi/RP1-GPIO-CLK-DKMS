@@ -31,6 +31,7 @@ typedef uint64_t u64;
 #define module_exit(x)
 #define DEFINE_MUTEX(x) int x
 static bool allowed = true, foreign, rp1_present = true;
+static const char *foreign_name;
 static int references, apply_error, apply_id = 9, remove_error, remove_id;
 static int apply_calls, remove_calls, copyout_error;
 struct file { int unused; };
@@ -57,7 +58,7 @@ static struct device_node *of_get_compatible_child(
   !strcmp(compatible, "snps,axi-dma-1.01a") ? &dma_fixture : NULL;
 }
 static struct device_node *of_find_node_by_name(void *from, const char *name) {
- (void)from; (void)name; return NULL;
+ (void)from; return foreign_name && !strcmp(foreign_name, name) ? &node_fixture : NULL;
 }
 static int capable(int cap) { (void)cap; return allowed; }
 static int mutex_trylock(int *lock) { if (*lock) return 0; *lock = 1; return 1; }

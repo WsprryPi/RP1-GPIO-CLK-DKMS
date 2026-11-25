@@ -215,8 +215,23 @@ def _validate_snapshot(candidate, commit, release=False):
         require([p.name for p in packages] == [f'{PACKAGE}_{DEBIAN}_all.deb'] and
                 packages[0].read_bytes() == (candidate/DEB).read_bytes(),
                 'package not reproducible from exact source/environment')
+        boot_overlays = []
+        for route in ('gpio4', 'gpio20'):
+            path = Path(temporary)/f'{route}.dtbo'
+            path.write_bytes(member_map[routes[route]['packagePath']]['bytes'])
+            boot_overlays.append(path)
+        drive_routes = read_json(command([
+            sys.executable, '-I', source_dir/'scripts/drive_capabilities.py', *boot_overlays,
+        ], timeout=120))
+    exact(drive_routes, set(routes), 'drive capability routes')
+    for route, capability in drive_routes.items():
+        capability.update(routeId=routes[route]['routeId'],
+                          compatibilityId=routes[route]['compatibilityId'])
     return {'status': 'PASS', 'classification': classification, 'published': False,
-            'sourceCommit': commit, 'sourceTree': tree, 'independentlyRebuilt': True}
+            'sourceCommit': commit, 'sourceTree': tree, 'independentlyRebuilt': True,
+            'driveCapabilities': {'schemaVersion': 1,
+                'package': {'filename': DEB, 'sha256': manifest['package']['sha256']},
+                'uapiSha256': manifest['uapi']['sha256'], 'routes': drive_routes}}
 
 
 def snapshot_assets(candidate):

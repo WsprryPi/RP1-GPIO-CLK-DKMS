@@ -20,7 +20,7 @@ struct rp1_gpclk_chunk_cursor {
 };
 
 int rp1_gpclk_execution_tones_valid(const struct rp1_gpclk_tone *tones,
-				    __u32 tone_count, __u32 drive_ma);
+				    __u32 tone_count);
 int rp1_gpclk_execution_event_writes(__u64 duration_ns, size_t *writes);
 int rp1_gpclk_execution_chunk_writes(__u64 duration_ns, __u64 *remainder,
 				     size_t *writes);

@@ -3,6 +3,19 @@
 
 #include "rp1_gpclk/execution_machine.h"
 
+enum rp1_gpclk_pin_transition rp1_gpclk_pins_after_activation(int error)
+{
+	return error ? RP1_GPCLK_PINS_UNCERTAIN : RP1_GPCLK_PINS_ACTIVE;
+}
+
+int rp1_gpclk_pins_restored(enum rp1_gpclk_pin_transition previous, int error)
+{
+	if (error)
+		return error;
+	/* Pinctrl may report success for a cached state after a partial failure. */
+	return previous == RP1_GPCLK_PINS_ACTIVE ? 0 : -EIO;
+}
+
 static void rp1_gpclk_first_error(int *first, int result)
 {
 	if (!*first && result)

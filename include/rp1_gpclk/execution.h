@@ -10,6 +10,7 @@ int rp1_gpclk_execution_init(struct rp1_gpclk_device *device);
 int rp1_gpclk_execution_submit_events(
 	struct rp1_gpclk_device *device, __u64 owner,
 	struct rp1_gpclk_submit_events *request,
+	unsigned int drive_state,
 	const struct rp1_gpclk_tone *tones,
 	const struct rp1_gpclk_event *events);
 void rp1_gpclk_execution_activate(struct rp1_gpclk_device *device,

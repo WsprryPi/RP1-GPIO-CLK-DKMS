@@ -11,6 +11,18 @@ rebuilds the package and verifies source, control/payload inventories, checksums
 UAPI, overlays, compatibility, tool identities, and reproducibility. Outputs must
 be outside every source checkout. No builder or validator publishes anything.
 
+Successful validation includes `driveCapabilities` schema version 1 in the
+validator's JSON response. The enclosing `sourceCommit` and `sourceTree`
+identify the provider snapshot. The record includes the package filename and
+SHA-256, `uapiSha256`, and `gpio4` and `gpio20` route records. Each route records
+`routeId`, `compatibilityId`, `bootDtboSha256`, `runtimeDtboSha256`, and the
+numeric `supportedDriveMaMask` using the canonical `QUERY` bits. Validation
+resolves the packaged overlay on a synthetic tree, exercises the module's
+drive policy and query handler, and checks the controller-generated overlay
+against the packaged form. This describes the checked provider capability for
+the consumer candidate review. Target pad behavior and RF require separate
+evidence.
+
 ## Build environment
 
 Use `tools/release-builder.Containerfile` for package tools or the reviewed

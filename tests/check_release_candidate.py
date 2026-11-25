@@ -248,7 +248,7 @@ class FormatTests(unittest.TestCase):
 class LinuxTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        for name in ('dpkg-buildpackage', 'dpkg-deb', 'dtc', 'fdtput'):
+        for name in ('dpkg-buildpackage', 'dpkg-deb', 'dtc', 'fdtget', 'fdtput', 'fdtoverlay', 'cc'):
             if not shutil.which(name):
                 raise AssertionError('required Linux release test tool missing: '+name)
         cls.temp = tempfile.TemporaryDirectory(prefix='rp1-release-tests-')
@@ -274,8 +274,22 @@ class LinuxTests(unittest.TestCase):
             jsonschema.validators.validator_for(schema).check_schema(schema)
 
     def test_independent_replay_and_consumer_shape(self):
-        self.assertEqual(self.validator(self.candidate, self.commit)['status'], 'PASS')
+        result = self.validator(self.candidate, self.commit)
+        self.assertEqual(result['status'], 'PASS')
         manifest = c.read_json((self.candidate/c.MANIFEST).read_bytes())
+        metadata = c.read_json((self.candidate/c.METADATA).read_bytes())
+        drives = result['driveCapabilities']
+        self.assertEqual(drives['schemaVersion'], 1)
+        self.assertEqual(drives['package'], {k: manifest['package'][k] for k in ('filename', 'sha256')})
+        self.assertEqual(drives['uapiSha256'], manifest['uapi']['sha256'])
+        self.assertEqual(set(drives['routes']), {'gpio4', 'gpio20'})
+        for route, capability in drives['routes'].items():
+            self.assertEqual(capability['supportedDriveMaMask'], 0x0f)
+            self.assertEqual(capability['routeId'], metadata['routes'][route]['routeId'])
+            self.assertEqual(capability['compatibilityId'], metadata['routes'][route]['compatibilityId'])
+            self.assertEqual(capability['bootDtboSha256'], metadata['routes'][route]['dtboSha256'])
+            self.assertRegex(capability['runtimeDtboSha256'], r'^[0-9a-f]{64}$')
+            self.assertNotEqual(capability['bootDtboSha256'], capability['runtimeDtboSha256'])
         contract = expand(json.loads((self.source/'release/wsprrypi-consumer-contract.json').read_text()))
         self.assertEqual(set(manifest), set(contract['manifestKeys']))
         self.assertEqual(manifest['releaseChannel'], contract['stableChannel'])

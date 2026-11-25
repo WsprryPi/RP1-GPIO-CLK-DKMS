@@ -6,11 +6,15 @@ import hashlib
 import importlib.util
 import json
 import pathlib
+import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+import drive_capabilities
 
 def load(name: str, path: pathlib.Path):
     spec = importlib.util.spec_from_file_location(name, path)
@@ -33,6 +37,7 @@ compiled = {}
 endpoint_names = set()
 with tempfile.TemporaryDirectory() as temporary:
     out = pathlib.Path(temporary)
+    probe, base = drive_capabilities.build_probe(ROOT, out)
     for route, identity in contract["routes"].items():
         source = ROOT / identity["source"]
         text = source.read_text()
@@ -48,8 +53,8 @@ with tempfile.TemporaryDirectory() as temporary:
                     f'"{shared["parentClockName"]}"',
                     f'dmas = <&{shared["dmaProvider"]} {shared["dmaId"]}>',
                     'reg-names = "tick-dma0", "dma-tick0"',
-                    'pinctrl-names = "default", "active", "safe"',
-                    'function = "gpio"', 'input-enable;', 'bias-disable;',
+                    'pinctrl-names = "default", "active", "safe",',
+                    'function = "gpio"', 'input-enable;', 'output-disable;', 'bias-disable;',
                     'function = "gpclk0"', 'drive-strength = <2>')
         assert all(token in text for token in required)
         assert f'pins = "{route}"' in text and f'pins = "{other}"' not in text
@@ -58,6 +63,48 @@ with tempfile.TemporaryDirectory() as temporary:
         builder.build_dtbo(source, first, dtc)
         builder.build_dtbo(source, second, dtc)
         assert first.read_bytes() == second.read_bytes()
+        assert drive_capabilities.validate_overlay(probe, base, first, route) == 0x0f
+        prefix = f"rp1_gpclk_{route}"
+        cases = (
+            ('drive-strength = <4>;', 'drive-strength = <2>;'),
+            ('drive-strength = <8>;', 'drive-strength = <8 12>;'),
+            (f'pinctrl-3 = <&{prefix}_active_4ma>', f'pinctrl-3 = <&{prefix}_active_8ma>'),
+            (f'pinctrl-3 = <&{prefix}_active_4ma>', 'pinctrl-3 = <&rp1_clocks>'),
+            (f'pinctrl-0 = <&{prefix}_safe>', f'pinctrl-0 = <&{prefix}_active>'),
+            (f'pinctrl-2 = <&{prefix}_safe>;',
+             f'pinctrl-2 = <&{prefix}_safe>; pinctrl-6 = <&{prefix}_safe>;'),
+            ('output-disable;', 'output-enable;'),
+            ('input-enable;', 'input-enable = <0>;'),
+            (f'pins = "{route}";', f'pins = "{other}";'),
+            ('&rp1_gpio {', '&rp1_gpio { status = "disabled";'),
+            ('&rp1 {', '&rp1 { foreign-gpio { compatible = "raspberrypi,rp1-gpio"; };'),
+            ('status = "okay";', 'status = "disabled";'),
+        )
+        for needle, replacement in cases:
+            assert needle in text
+            changed = out / "invalid.dts"
+            changed.write_text(text.replace(needle, replacement, 1))
+            output = out / "invalid.dtbo"
+            builder.build_dtbo(changed, output, dtc)
+            try:
+                drive_capabilities.validate_overlay(probe, base, output, route)
+            except (ValueError, subprocess.CalledProcessError):
+                pass
+            else:
+                raise AssertionError(f"{route} accepted altered pinctrl setting {replacement}")
+
+        # A v1.0.x-style overlay cannot supply the successor's full set.
+        stale = out / "stale.dts"
+        stale.write_text(re.sub(r'\n\s*pinctrl-[345] = [^;]+;', '', text)
+                         .replace(',\n\t\t\t\t"active-4ma", "active-8ma", "active-12ma"', ''))
+        old = out / "stale.dtbo"
+        builder.build_dtbo(stale, old, dtc)
+        try:
+            drive_capabilities.validate_overlay(probe, base, old, route)
+        except (ValueError, subprocess.CalledProcessError):
+            pass
+        else:
+            raise AssertionError(f"{route} accepted a predecessor pinctrl layout")
         decompiled = subprocess.check_output([dtc, "-I", "dtb", "-O", "dts", str(first)],
                                              text=True, stderr=subprocess.DEVNULL)
         for token in (shared["compatible"], identity["endpointName"], "tick-dma0",

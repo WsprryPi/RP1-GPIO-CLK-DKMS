@@ -49,6 +49,7 @@ static bool rp1_gpclk_release_identity_allowed(
 			RP1_GPCLK_MODULE_VERSION,
 			device->clock && device->dma_chan &&
 			device->pinctrl &&
+			device->supported_drive_ma_mask &&
 			device->tick_dma0 && device->dma_tick0 &&
 			device->rate_exclusive);
 }
@@ -252,7 +253,8 @@ static void rp1_gpclk_remove(struct platform_device *pdev)
 	if (device->core.value.cleanup_fault || device->clock_cleanup_error ||
 	    device->dma_submitted || device->clock_enabled ||
 	    device->clock_prepared || device->parent_selected ||
-	    device->tick_state_captured || device->pins_active_selected ||
+	    device->tick_state_captured ||
+	    READ_ONCE(device->pin_transition) != RP1_GPCLK_PINS_SAFE ||
 	    READ_ONCE(device->worker))
 		route_cleanup_failed = true;
 #endif
