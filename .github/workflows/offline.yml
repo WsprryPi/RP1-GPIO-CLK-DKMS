@@ -4,6 +4,9 @@ on: [push, pull_request, workflow_dispatch]
 permissions:
   contents: read
 jobs:
+  documentation:
+    uses: ./.github/workflows/documentation.yml
+
   offline:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
